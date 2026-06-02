@@ -1,10 +1,12 @@
-# Coma Screener — Aziende da Coma · v1.2.0
+# Coma Screener — Aziende da Coma · v1.3.0
 
 Screener azionario per individuare **compounder di lungo periodo** ("aziende da coma": comprale e dimenticale) secondo la metodologia di Massimo Rea, con backtest **out-of-sample** onesto.
 
 🔗 **App live:** https://igorbonfanti.github.io/coma-screener/
 
 **Universi selezionabili e combinabili:** S&P 500 · NYSE · NASDAQ · STOXX Europe 600 (+ preset "Tutti USA" e "USA + Europa"). Selezionando più universi l'app ne fa l'**unione**, ricalcola il Quality Score sul set combinato e produce screening + portafoglio + backtest IS/OOS live.
+
+**Benchmark congruente alla selezione:** S&P 500→^GSPC · NYSE→^NYA · NASDAQ→^IXIC · STOXX→^STOXX · combo USA→^GSPC · USA+Europa→MSCI ACWI. Mostrato sempre a video. Passando il mouse su opzioni e intestazioni compaiono spiegazioni.
 
 ## Come funziona
 

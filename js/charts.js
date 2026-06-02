@@ -25,7 +25,7 @@
 
   function renderEquity(months, series) {
     const ds = [];
-    if (series.bench) ds.push({ label: 'Benchmark', data: series.bench, borderColor: C.tx3, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, tension: .05 });
+    if (series.bench) ds.push({ label: series.benchLabel || 'Benchmark', data: series.bench, borderColor: C.tx3, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, tension: .05 });
     ds.push({ label: series.label || 'Portafoglio', data: series.port, borderColor: C.amber, backgroundColor: 'rgba(245,158,11,.06)', borderWidth: 2, pointRadius: 0, fill: true, tension: .05 });
     const cfg = { type: 'line', data: { labels: months, datasets: ds }, options: baseOpts(true) };
     if (equityChart) { equityChart.data = cfg.data; equityChart.update(); }

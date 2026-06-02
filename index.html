@@ -109,21 +109,21 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer}
   <div class="kpis" id="kpis"></div>
 
   <div class="card">
-    <h2>📈 Backtest portafoglio canonico</h2>
-    <div class="desc">Curva equity (base 100, scala log) e drawdown. Confronta in-sample vs out-of-sample.</div>
+    <h2>📈 Backtest portafoglio canonico <span class="pill" id="bench-name"></span></h2>
+    <div class="desc">Curva equity (base 100, scala log) e drawdown. Confronta in-sample vs out-of-sample. Il benchmark si adatta agli universi selezionati.</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
       <div class="seg" id="seg-period">
-        <button data-v="oos" class="on">Out-of-sample</button>
-        <button data-v="insample">In-sample</button>
+        <button data-v="oos" class="on" title="Out-of-sample: selezione su dati passati (fino a ~7 anni fa) testata sul periodo successivo. Il risultato più onesto.">Out-of-sample</button>
+        <button data-v="insample" title="In-sample: selezione e test sullo stesso intero storico. Sempre ottimistico (circolare): solo riferimento.">In-sample</button>
       </div>
       <div class="seg" id="seg-scheme">
-        <button data-v="equal" class="on">Equipeso</button>
-        <button data-v="invvol">Risk-parity</button>
-        <button data-v="resampled">Max-Sharpe</button>
+        <button data-v="equal" class="on" title="Equipeso: stesso peso a ogni titolo (1/N). Il più robusto, nessuna stima richiesta.">Equipeso</button>
+        <button data-v="invvol" title="Risk-parity: peso inversamente proporzionale alla volatilità, così ogni titolo contribuisce ugualmente al rischio.">Risk-parity</button>
+        <button data-v="resampled" title="Max-Sharpe: ottimizza rischio/rendimento (resampled, block bootstrap). Cerca i pesi migliori ma concentra di più.">Max-Sharpe</button>
       </div>
       <div class="seg" id="seg-mode">
-        <button data-v="rebal" class="on">Ribilanciato</button>
-        <button data-v="buyhold">Buy &amp; hold</button>
+        <button data-v="rebal" class="on" title="Pesi mantenuti costanti nel tempo (ribilanciamento periodico).">Ribilanciato</button>
+        <button data-v="buyhold" title="Comprato una volta e lasciato correre: i pesi driftano. Coerente con la tesi 'compra e dimentica'.">Buy &amp; hold</button>
       </div>
     </div>
     <div class="row">
@@ -163,7 +163,7 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer}
     </div>
   </div>
 
-  <div class="foot">coma-screener <b>v1.2.0</b> · dati Yahoo Finance, total return in EUR · metodologia "Aziende da Coma" (M. Rea) · uso personale</div>
+  <div class="foot">coma-screener <b>v1.3.0</b> · dati Yahoo Finance, total return in EUR · metodologia "Aziende da Coma" (M. Rea) · uso personale</div>
 </div>
 
 <script src="scripts/engine.js"></script>

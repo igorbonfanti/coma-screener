@@ -344,11 +344,41 @@ async function run(uname) {
   return { uname, count: rows.length, eligible: eligible.length };
 }
 
+// benchmark globali, scelti dall'app in base alla selezione di universi
+const BENCHMARKS = {
+  '^GSPC': 'S&P 500',
+  '^IXIC': 'NASDAQ Composite',
+  '^NYA': 'NYSE Composite',
+  '^STOXX': 'STOXX Europe 600',
+  'ACWI': 'MSCI ACWI (mondo)',
+};
+async function generateBenchmarks() {
+  log('Genero benchmarks.json...');
+  const raw = {};
+  for (const sym of Object.keys(BENCHMARKS)) {
+    const s = await fetchSeries(sym);
+    if (s) raw[sym] = s; else log(`  WARN: benchmark ${sym} non disponibile`);
+  }
+  const ccys = [...new Set(Object.values(raw).map((s) => s.currency).filter(Boolean))];
+  const fx = await buildFx(ccys);
+  const out = { updated: new Date().toISOString(), base: 'EUR', series: {} };
+  for (const [sym, s] of Object.entries(raw)) {
+    const e = toEur(s, fx); if (!e) continue;
+    const m = toMonthly(e.ts, e.px);
+    out.series[sym] = { label: BENCHMARKS[sym], s: m.months[0], p: m.vals.map((x) => +x.toFixed(4)) };
+  }
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(path.join(DATA_DIR, 'benchmarks.json'), JSON.stringify(out));
+  log(`Scritto benchmarks.json (${Object.keys(out.series).length} indici)`);
+}
+
 (async () => {
   const args = process.argv.slice(2);
+  if (args.length === 1 && args[0] === 'BENCH') { await generateBenchmarks(); return; }
   const targets = args.length ? args : ['SP500'];
   const summary = [];
   for (const u of targets) summary.push(await run(u));
+  await generateBenchmarks(); // tiene benchmarks.json fresco a ogni run
   // meta globale
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   const metaPath = path.join(DATA_DIR, 'meta.json');

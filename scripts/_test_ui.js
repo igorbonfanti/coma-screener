@@ -71,6 +71,9 @@ setTimeout(() => {
   ck($('#universe-select').querySelectorAll('[data-preset]').length === 2, '2 preset');
   ck($('#screen-ctrls').querySelectorAll('input[type=range]').length === 6, '6 slider screening');
   ck($('#updated').textContent.includes('agg.'), 'data aggiornamento');
+  ck($('#bench-name').textContent.includes('S&P 500'), 'benchmark mostrato (S&P 500 per SP500)');
+  ck([...$('#port-tbl').querySelectorAll('th')].some((th) => th.title && th.title.length > 10), 'tooltip su intestazioni portafoglio');
+  ck([...$('#universe-select').querySelectorAll('[data-u]')].every((el) => el.title), 'tooltip su toggle universi');
 
   const countSP = state_count();
   function state_count() { return +($('#screen-summary').textContent.match(/Analizzati (\d+)/) || [])[1] || 0; }
@@ -82,6 +85,7 @@ setTimeout(() => {
     const countMerged = state_count();
     ck(countMerged > countSP, `merge universi: analizzati ${countSP} -> ${countMerged}`);
     ck($('#universe-select').querySelectorAll('.uchip.on').length === 2, '2 universi attivi');
+    ck($('#bench-name').textContent.includes('proxy USA'), 'benchmark combo USA = S&P 500 proxy');
     ck($('#kpis').textContent.includes('Out-of-sample'), 'OOS live anche su combo');
     ck($('#port-tbl').querySelectorAll('tr').length > 3, 'portafoglio su combo');
 

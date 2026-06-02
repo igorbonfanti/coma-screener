@@ -24,9 +24,55 @@
 
   const DEFAULT_T = { minYears: 15, tolerance5y: -0.05, minR2: 0.90, minCagr: 0.10, maxDD: -0.45, topN: 20 };
   const T = { ...DEFAULT_T };
-  let state = { universes: ['SP500'], loaded: {}, merged: null, params: null,
+  let state = { universes: ['SP500'], loaded: {}, merged: null, params: null, benchmarks: null,
     live: null, oos: null, period: 'oos', scheme: 'equal', mode: 'rebal',
     sortKey: 'quality', sortDir: -1, basket: new Set(), build: null, lastScreen: [] };
+
+  // benchmark più congruente alla selezione di universi
+  function chooseBenchmark(unis) {
+    const eu = unis.includes('STOXX600');
+    const us = unis.filter((u) => ['SP500', 'NYSE', 'NASDAQ'].includes(u));
+    if (eu && us.length) return { sym: 'ACWI', label: 'MSCI ACWI (mondo)' };
+    if (eu) return { sym: '^STOXX', label: 'STOXX Europe 600' };
+    if (us.length === 1) return { SP500: { sym: '^GSPC', label: 'S&P 500' },
+      NASDAQ: { sym: '^IXIC', label: 'NASDAQ Composite' }, NYSE: { sym: '^NYA', label: 'NYSE Composite' } }[us[0]];
+    return { sym: '^GSPC', label: 'S&P 500 (proxy USA)' };
+  }
+
+  // spiegazioni mostrate al passaggio del mouse (attributi title)
+  const TIPS = {
+    SP500: 'Le ~500 maggiori aziende quotate USA (indice S&P 500).',
+    NYSE: 'Titoli quotati al New York Stock Exchange (~2300).',
+    NASDAQ: 'Titoli quotati al NASDAQ (~4000), forte presenza tech.',
+    STOXX600: 'Maggiori aziende europee (subset dello STOXX Europe 600).',
+    preset0: 'Seleziona insieme S&P 500 + NYSE + NASDAQ.',
+    preset1: 'Seleziona tutti gli universi: USA + Europa.',
+    oos: 'Out-of-sample: selezione fatta su dati passati (fino a ~7 anni fa) e testata sul periodo successivo. È il risultato più onesto.',
+    insample: 'In-sample: selezione e test sullo stesso intero storico. Sempre ottimistico (circolare): usalo solo come riferimento.',
+    equal: 'Equipeso: stesso peso a ogni titolo (1/N). Il più robusto, nessuna stima richiesta.',
+    invvol: 'Risk-parity: peso inversamente proporzionale alla volatilità, così ogni titolo contribuisce ugualmente al rischio.',
+    resampled: 'Max-Sharpe: ottimizza il rapporto rischio/rendimento (resampled, block bootstrap). Cerca i pesi migliori ma concentra di più.',
+    rebal: 'Pesi mantenuti costanti nel tempo (ribilanciamento periodico).',
+    buyhold: 'Comprato una volta e lasciato correre: i pesi driftano. Coerente con la tesi "compra e dimentica".',
+    minYears: 'Anni minimi di quotazione richiesti: esclude i titoli troppo giovani.',
+    tolerance5y: 'Perdita massima tollerata sul peggior quinquennio mobile (0% = mai negativo su 5 anni).',
+    minR2: 'Quanto la curva di prezzo (scala log) è vicina a una retta: più alto = crescita più regolare.',
+    minCagr: 'Rendimento annuo composto minimo richiesto.',
+    maxDD: 'Massima caduta dai massimi tollerata: più stretto = più difensivo.',
+    topN: 'Quanti titoli compongono il portafoglio (i migliori per Quality).',
+    // intestazioni colonne
+    t: 'Simbolo (ticker) del titolo.',
+    w: 'Quota nel portafoglio secondo lo schema di pesi selezionato.',
+    quality: 'Coma Quality Score: media dei percentili di R², Min 5Y e MAR (0–1, più alto = meglio).',
+    cagr: 'CAGR: rendimento annuo composto storico.',
+    vol: 'Volatilità annualizzata dei rendimenti.',
+    mdd: 'Massima caduta dai massimi storici (drawdown).',
+    min5y: 'Rendimento del peggior quinquennio mobile (negativo = ha perso su 5 anni).',
+    r2: 'Regolarità della crescita: linearità della curva log-prezzo.',
+    reg: 'Regolarità: deviazione tipica dal trend (più bassa = curva più liscia). Indipendente dalla crescita.',
+    mar: 'MAR: CAGR diviso il massimo drawdown (rendimento per unità di sofferenza).',
+    sortino: 'Sortino: rendimento corretto per la sola volatilità negativa.',
+  };
 
   const CTRLS = [
     { k: 'minYears', label: 'Storia minima', min: 5, max: 30, step: 1, fmt: (v) => v + ' anni' },
@@ -65,15 +111,17 @@
     const rows = [...rowMap.values()];
     E.addQualityScore(rows); // Quality ricalcolato sull'insieme combinato
 
-    // benchmark: della prima base selezionata per priorita
-    let benchU = BENCH_PRIORITY.find((u) => sel.includes(u)) || sel[0];
-    const benchCurve = state.loaded[benchU].curves.bench || null;
+    // benchmark più congruente alla selezione
+    const bm = chooseBenchmark(state.universes);
+    const fallbackU = BENCH_PRIORITY.find((u) => sel.includes(u)) || sel[0];
+    const benchCurve = (state.benchmarks && state.benchmarks.series[bm.sym])
+      || state.loaded[fallbackU].curves.bench || null;
 
     state.params = datasets[0].metrics.params;
     state.merged = {
       metrics: { rows, count: rows.length, updated },
       curves: { series, bench: benchCurve },
-      benchLabel: (BASES.find((b) => b.id === benchU) || {}).label || benchU,
+      benchLabel: bm.label,
     };
     $('#updated').textContent = 'agg. ' + (updated ? new Date(updated).toLocaleDateString('it-IT') : '—');
     recomputeLive(); recomputeOOS(); renderAll();
@@ -95,9 +143,9 @@
   function renderUniverseSelect() {
     const box = $('#universe-select');
     let h = '<span class="muted" style="font-size:12px;margin-right:4px">Universi:</span>';
-    h += BASES.map((b) => `<span class="uchip${state.universes.includes(b.id) ? ' on' : ''}" data-u="${b.id}">${b.label}</span>`).join('');
+    h += BASES.map((b) => `<span class="uchip${state.universes.includes(b.id) ? ' on' : ''}" data-u="${b.id}" title="${TIPS[b.id]}">${b.label}</span>`).join('');
     h += '<span class="usep"></span>';
-    h += PRESETS.map((p, i) => `<button class="upreset" data-preset="${i}">${p.label}</button>`).join('');
+    h += PRESETS.map((p, i) => `<button class="upreset" data-preset="${i}" title="${TIPS['preset' + i]}">${p.label}</button>`).join('');
     box.innerHTML = h;
     box.querySelectorAll('[data-u]').forEach((el) => el.addEventListener('click', () => toggleUniverse(el.dataset.u)));
     box.querySelectorAll('[data-preset]').forEach((el) => el.addEventListener('click', () => setUniverses(PRESETS[+el.dataset.preset].set)));
@@ -142,11 +190,13 @@
 
   function renderBacktest() {
     const blk = currentBacktest();
+    const benchLabel = state.merged ? state.merged.benchLabel : '';
+    const bn = $('#bench-name'); if (bn) bn.textContent = benchLabel ? 'Benchmark: ' + benchLabel : '';
     if (!blk || !blk.schemes[state.scheme]) { CH.renderEquity([], { port: [], label: '–' }); CH.renderDrawdown([], [], null); return; }
     const sc = blk.schemes[state.scheme];
     const port = state.mode === 'buyhold' ? sc.buyhold : sc.rebal;
     const label = `Coma · ${schemeLabel[state.scheme]}`;
-    CH.renderEquity(blk.months, { port, bench: blk.bench, label });
+    CH.renderEquity(blk.months, { port, bench: blk.bench, label, benchLabel });
     CH.renderDrawdown(blk.months, port, blk.bench);
   }
 
@@ -163,7 +213,8 @@
       (state.scheme === 'resampled' ? ` · ${live.scenarios} scenari` : '') +
       (live.dropped ? ` · ${live.dropped} senza curva` : '');
     const maxW = Math.max(...picks.map((x) => x[wk]));
-    let h = '<tr><th>Ticker</th><th>Peso</th><th>Quality</th><th>CAGR</th><th>MaxDD</th><th>Min 5Y</th><th>R²</th><th>Reg.</th></tr>';
+    const ph = [['t', 'Ticker'], ['w', 'Peso'], ['quality', 'Quality'], ['cagr', 'CAGR'], ['mdd', 'MaxDD'], ['min5y', 'Min 5Y'], ['r2', 'R²'], ['reg', 'Reg.']];
+    let h = '<tr>' + ph.map(([k, l]) => `<th title="${TIPS[k]}">${l}</th>`).join('') + '</tr>';
     for (const x of picks) {
       h += `<tr><td class="tk">${x.t}</td>` +
         `<td><span class="wbar" style="width:${(x[wk] / maxW * 46).toFixed(0)}px"></span>${pct(x[wk])}</td>` +
@@ -179,7 +230,7 @@
   function renderScreenCtrls() {
     let h = '';
     for (const c of CTRLS) {
-      h += `<div class="ctrl"><label>${c.label} <b id="lbl-${c.k}">${c.fmt(T[c.k])}</b></label>` +
+      h += `<div class="ctrl" title="${TIPS[c.k]}"><label>${c.label} <b id="lbl-${c.k}">${c.fmt(T[c.k])}</b></label>` +
         `<input type="range" id="rng-${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${T[c.k]}"></div>`;
     }
     $('#screen-ctrls').innerHTML = h;
@@ -214,7 +265,7 @@
       `<span class="muted">scartati: storico ${s.storico} · 5Y neg ${s.cinqueY} · R² ${s.r2} · CAGR ${s.cagr} · DD ${s.dd}</span>`;
     const cols = [['t', 'Ticker'], ['quality', 'Quality'], ['cagr', 'CAGR'], ['vol', 'Vol'],
       ['mdd', 'MaxDD'], ['min5y', 'Min5Y'], ['r2', 'R²'], ['reg', 'Reg.'], ['mar', 'MAR'], ['sortino', 'Sortino']];
-    let h = '<tr><th></th>' + cols.map(([k, l]) => `<th data-k="${k}">${l}${state.sortKey === k ? (state.sortDir < 0 ? ' ▾' : ' ▴') : ''}</th>`).join('') + '</tr>';
+    let h = '<tr><th title="Clicca ★ per aggiungere al basket custom"></th>' + cols.map(([k, l]) => `<th data-k="${k}" title="${TIPS[k] || ''}">${l}${state.sortKey === k ? (state.sortDir < 0 ? ' ▾' : ' ▴') : ''}</th>`).join('') + '</tr>';
     for (const r of res.picks) {
       const on = state.basket.has(r.t) ? ' on' : '';
       h += `<tr><td><span class="star${on}" data-star="${r.t}">${on ? '★' : '☆'}</span></td>` +
@@ -360,7 +411,7 @@
     $('#btn-export').addEventListener('click', exportExcel);
     ComaStore.init();
     renderSnapshots();
-    loadAndMerge();
+    fetch('data/benchmarks.json').then((r) => r.json()).then((b) => { state.benchmarks = b; }).catch(() => {}).finally(loadAndMerge);
   }
   document.addEventListener('DOMContentLoaded', init);
 })();
