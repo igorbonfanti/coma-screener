@@ -29,11 +29,19 @@
       ]
     },
     "NASDAQ": {
-      "label": "USA (NASDAQ + NYSE)",
-      "benchmark": "^GSPC",
+      "label": "NASDAQ",
+      "benchmark": "^IXIC",
       "source": null,
       "txtSources": [
-        "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt",
+        "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt"
+      ],
+      "tickers": []
+    },
+    "NYSE": {
+      "label": "NYSE",
+      "benchmark": "^NYA",
+      "source": null,
+      "txtSources": [
         "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt"
       ],
       "tickers": []

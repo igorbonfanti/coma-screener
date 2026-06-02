@@ -31,6 +31,12 @@ h1{font-size:19px;font-weight:700;letter-spacing:-.3px}
 .sub{color:var(--tx2);font-size:12px}
 select,button,input{font-family:inherit}
 .usel{background:var(--bg3);color:var(--tx);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer}
+.usel-group{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.uchip{background:var(--bg3);border:1px solid var(--line);color:var(--tx2);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;user-select:none}
+.uchip.on{background:var(--amber);color:#1a1205;border-color:var(--amber)}
+.usep{width:1px;height:22px;background:var(--line);margin:0 2px}
+.upreset{background:none;border:1px dashed var(--line);color:var(--tx3);border-radius:9px;padding:7px 11px;font-size:12px;cursor:pointer}
+.upreset:hover{color:var(--tx2);border-color:var(--tx3)}
 .banner{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:var(--r);padding:12px 14px;margin-bottom:18px;display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:var(--tx2)}
 .banner b{color:var(--amber2)}
 .banner .x{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:18px;line-height:1;padding:0 4px}
@@ -88,8 +94,11 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer}
         <div class="sub">Aziende da coma — buy &amp; hold di lungo periodo · <span id="updated" class="muted">…</span></div>
       </div>
     </div>
-    <select id="universe" class="usel"></select>
   </header>
+
+  <div class="card" style="padding:14px 18px;margin-bottom:18px">
+    <div class="usel-group" id="universe-select"></div>
+  </div>
 
   <div class="banner" id="caveat">
     <span>⚠️</span>
@@ -154,7 +163,7 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer}
     </div>
   </div>
 
-  <div class="foot">coma-screener <b>v1.1.0</b> · dati Yahoo Finance, total return in EUR · metodologia "Aziende da Coma" (M. Rea) · uso personale</div>
+  <div class="foot">coma-screener <b>v1.2.0</b> · dati Yahoo Finance, total return in EUR · metodologia "Aziende da Coma" (M. Rea) · uso personale</div>
 </div>
 
 <script src="scripts/engine.js"></script>

@@ -16,8 +16,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Rigenera dataset (SP500 + STOXX600 + NASDAQ)
-        run: node scripts/fetch_data.js SP500 STOXX600 NASDAQ
+      - name: Rigenera dataset (S&P500 + STOXX600 + NASDAQ + NYSE)
+        run: node scripts/fetch_data.js SP500 STOXX600 NASDAQ NYSE
       - name: Commit dati aggiornati
         run: |
           git config user.name "github-actions[bot]"

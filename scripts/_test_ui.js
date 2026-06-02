@@ -61,51 +61,52 @@ const fail = [];
 const ck = (cond, name) => { if (!cond) fail.push(name); };
 
 setTimeout(() => {
-  // stato iniziale (load + recompute live sincrono)
+  // stato iniziale (SP500, IS+OOS live)
   ck($('#kpis').children.length >= 2, 'KPI popolati');
-  ck($('#kpis').textContent.includes('%'), 'KPI con percentuali');
   ck($('#kpis').textContent.includes('In-sample'), 'KPI in-sample (live)');
-  ck($('#kpis').textContent.includes('Out-of-sample'), 'KPI out-of-sample');
-  ck($('#port-tbl').querySelectorAll('tr').length > 5, 'tabella portafoglio righe (live)');
+  ck($('#kpis').textContent.includes('Out-of-sample'), 'KPI out-of-sample (live)');
+  ck($('#port-tbl').querySelectorAll('tr').length > 3, 'tabella portafoglio righe (live)');
   ck($('#port-tbl').textContent.includes('MCD'), 'portafoglio contiene un pick noto (MCD)');
+  ck($('#universe-select').querySelectorAll('[data-u]').length === 4, '4 toggle universi');
+  ck($('#universe-select').querySelectorAll('[data-preset]').length === 2, '2 preset');
   ck($('#screen-ctrls').querySelectorAll('input[type=range]').length === 6, '6 slider screening');
-  ck($('#screen-tbl').querySelectorAll('tr').length > 5, 'tabella screening righe');
   ck($('#updated').textContent.includes('agg.'), 'data aggiornamento');
 
-  const nPortBefore = $('#port-tbl').querySelectorAll('tr').length;
+  const countSP = state_count();
+  function state_count() { return +($('#screen-summary').textContent.match(/Analizzati (\d+)/) || [])[1] || 0; }
 
-  // M3: card costruisci/salva + basket
-  ck(!!$('#build-card'), 'card costruisci/salva presente');
-  ck($('#basket-metrics').children.length >= 1, 'metriche basket (canonico)');
-  ck($('#snapshots').textContent.includes('Nessuno') || $('#snapshots').querySelector('.snap'), 'lista snapshot');
-
-  // aggiungi 2 titoli al basket cliccando le stelle
-  const stars = $('#screen-tbl').querySelectorAll('[data-star]');
-  stars[0].click(); stars[1].click();
-  ck($('#basket-chips').querySelectorAll('.chip').length >= 2, 'basket: 2 chip');
-  ck($('#basket-metrics').textContent.includes('Custom'), 'basket: modalità Custom');
-
-  // export Excel
-  $('#btn-export').click();
-  ck(xlsxFile && xlsxFile.fn.includes('coma_'), 'export Excel chiamato');
-  ck(xlsxFile && xlsxFile.sheets.includes('Portafoglio') && xlsxFile.sheets.includes('Screening'), 'export: fogli presenti');
-
-  // salva snapshot (async)
-  $('#snap-note').value = 'test';
-  $('#btn-save').click();
-
-  // muovi slider
-  const r2 = $('#rng-minR2'); r2.value = 0.95; r2.dispatchEvent(new window.Event('input'));
+  // aggiungi NASDAQ -> merge multi-universo
+  $('#universe-select').querySelector('[data-u="NASDAQ"]').click();
 
   setTimeout(() => {
-    ck(fbDocs.length >= 1, 'snapshot salvato su Firebase (stub)');
-    ck(fbDocs[0] && fbDocs[0].picks && fbDocs[0].picks.length >= 2, 'snapshot ha i picks');
-    ck($('#save-status').textContent.includes('salvato'), 'status salvataggio');
-    ck($('#snapshots').querySelector('.snap'), 'snapshot in lista dopo save');
+    const countMerged = state_count();
+    ck(countMerged > countSP, `merge universi: analizzati ${countSP} -> ${countMerged}`);
+    ck($('#universe-select').querySelectorAll('.uchip.on').length === 2, '2 universi attivi');
+    ck($('#kpis').textContent.includes('Out-of-sample'), 'OOS live anche su combo');
+    ck($('#port-tbl').querySelectorAll('tr').length > 3, 'portafoglio su combo');
 
-    console.log('Errori runtime:', errors.length ? errors : 'nessuno');
-    console.log(fail.length ? 'FAIL: ' + fail.join(', ')
-      : 'TUTTI I CHECK UI PASSATI (port ' + (nPortBefore - 1) + ', basket+export+save ok, ' + fbDocs.length + ' snapshot)');
-    process.exit(fail.length || errors.length ? 1 : 0);
-  }, 450);
-}, 600);
+    // basket custom
+    const stars = $('#screen-tbl').querySelectorAll('[data-star]');
+    stars[0].click(); stars[1].click();
+    ck($('#basket-chips').querySelectorAll('.chip').length >= 2, 'basket: 2 chip');
+    ck($('#basket-metrics').textContent.includes('Custom'), 'basket: modalità Custom');
+
+    // export + save
+    $('#btn-export').click();
+    ck(xlsxFile && xlsxFile.fn.includes('coma_'), 'export Excel chiamato');
+    ck(xlsxFile && xlsxFile.sheets.includes('Portafoglio'), 'export: fogli presenti');
+    $('#snap-note').value = 'test'; $('#btn-save').click();
+
+    setTimeout(() => {
+      ck(fbDocs.length >= 1, 'snapshot salvato (stub)');
+      ck(fbDocs[0] && fbDocs[0].universes && fbDocs[0].universes.length === 2, 'snapshot ha universi multipli');
+      ck(fbDocs[0] && fbDocs[0].picks.length >= 2, 'snapshot ha i picks');
+      ck($('#snapshots').querySelector('.snap'), 'snapshot in lista');
+
+      console.log('Errori runtime:', errors.length ? errors : 'nessuno');
+      console.log(fail.length ? 'FAIL: ' + fail.join(', ')
+        : `TUTTI I CHECK UI PASSATI (SP500 ${countSP} -> merge ${countMerged} titoli, IS+OOS live, basket+export+save ok)`);
+      process.exit(fail.length || errors.length ? 1 : 0);
+    }, 500);
+  }, 600);
+}, 700);

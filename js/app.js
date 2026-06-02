@@ -1,4 +1,4 @@
-/* app.js — UI explorer coma-screener (in-sample ricalcolato live, OOS pre-calcolato) */
+/* app.js — UI explorer coma-screener · multi-universo (unione), IS+OOS live */
 (function () {
   'use strict';
   const E = window.ComaEngine, CH = window.ComaCharts, LIVE = window.ComaLive;
@@ -9,12 +9,24 @@
   const wKey = { equal: 'wEqual', invvol: 'wInvvol', resampled: 'wResampled' };
   const schemeLabel = { equal: 'Equipeso', invvol: 'Risk-parity', resampled: 'Max-Sharpe' };
 
-  const UNIVERSES = ['SP500', 'STOXX600', 'NASDAQ'];
+  // basi selezionabili + priorita benchmark (la prima selezionata fa da bench)
+  const BASES = [
+    { id: 'SP500', label: 'S&P 500' },
+    { id: 'NYSE', label: 'NYSE' },
+    { id: 'NASDAQ', label: 'NASDAQ' },
+    { id: 'STOXX600', label: 'STOXX 600' },
+  ];
+  const BENCH_PRIORITY = ['SP500', 'NYSE', 'NASDAQ', 'STOXX600'];
+  const PRESETS = [
+    { label: 'Tutti USA', set: ['SP500', 'NYSE', 'NASDAQ'] },
+    { label: 'USA + Europa', set: ['SP500', 'NYSE', 'NASDAQ', 'STOXX600'] },
+  ];
+
   const DEFAULT_T = { minYears: 15, tolerance5y: -0.05, minR2: 0.90, minCagr: 0.10, maxDD: -0.45, topN: 20 };
   const T = { ...DEFAULT_T };
-  let state = { universe: 'SP500', metrics: null, portfolio: null, curves: null, live: null,
-    period: 'oos', scheme: 'equal', mode: 'rebal', sortKey: 'quality', sortDir: -1,
-    basket: new Set(), build: null, lastScreen: [] };
+  let state = { universes: ['SP500'], loaded: {}, merged: null, params: null,
+    live: null, oos: null, period: 'oos', scheme: 'equal', mode: 'rebal',
+    sortKey: 'quality', sortDir: -1, basket: new Set(), build: null, lastScreen: [] };
 
   const CTRLS = [
     { k: 'minYears', label: 'Storia minima', min: 5, max: 30, step: 1, fmt: (v) => v + ' anni' },
@@ -24,51 +36,101 @@
     { k: 'maxDD', label: 'Max Drawdown', min: -0.80, max: -0.20, step: 0.05, fmt: (v) => pct(v, 0) },
     { k: 'topN', label: 'Numero titoli', min: 5, max: 40, step: 1, fmt: (v) => v },
   ];
-  const isDirty = () => CTRLS.some((c) => T[c.k] !== DEFAULT_T[c.k]);
 
-  async function loadUniverse(u) {
-    state.universe = u;
-    try {
-      const [m, p, c] = await Promise.all([
-        fetch(`data/metrics_${u}.json`).then((r) => r.json()),
-        fetch(`data/portfolio_${u}.json`).then((r) => r.json()),
-        fetch(`data/curves_${u}.json`).then((r) => r.json()),
-      ]);
-      state.metrics = m; state.portfolio = p; state.curves = c;
-      $('#updated').textContent = 'agg. ' + new Date(m.updated).toLocaleDateString('it-IT');
-      recomputeLive();
-      renderAll();
-    } catch (e) {
-      $('#kpis').innerHTML = `<div class="kpi"><div class="lab">Errore</div><div class="val" style="font-size:14px">Dati ${u} non disponibili</div></div>`;
-      console.error(e);
-    }
+  // ---- caricamento + merge -------------------------------------------------
+  async function loadBase(u) {
+    if (state.loaded[u]) return state.loaded[u];
+    const [m, c] = await Promise.all([
+      fetch(`data/metrics_${u}.json`).then((r) => r.json()),
+      fetch(`data/curves_${u}.json`).then((r) => r.json()),
+    ]);
+    state.loaded[u] = { metrics: m, curves: c };
+    return state.loaded[u];
+  }
+
+  async function loadAndMerge() {
+    const sel = state.universes;
+    let datasets;
+    try { datasets = await Promise.all(sel.map(loadBase)); }
+    catch (e) { $('#kpis').innerHTML = `<div class="kpi"><div class="lab">Errore</div><div class="val" style="font-size:14px">Dati non disponibili</div></div>`; return; }
+
+    // merge righe (dedup per ticker, prima occorrenza) + curve
+    const rowMap = new Map(), series = {};
+    let updated = null;
+    datasets.forEach((d) => {
+      d.metrics.rows.forEach((r) => { if (!rowMap.has(r.t)) rowMap.set(r.t, r); });
+      for (const t in d.curves.series) if (!series[t]) series[t] = d.curves.series[t];
+      if (!updated || d.metrics.updated > updated) updated = d.metrics.updated;
+    });
+    const rows = [...rowMap.values()];
+    E.addQualityScore(rows); // Quality ricalcolato sull'insieme combinato
+
+    // benchmark: della prima base selezionata per priorita
+    let benchU = BENCH_PRIORITY.find((u) => sel.includes(u)) || sel[0];
+    const benchCurve = state.loaded[benchU].curves.bench || null;
+
+    state.params = datasets[0].metrics.params;
+    state.merged = {
+      metrics: { rows, count: rows.length, updated },
+      curves: { series, bench: benchCurve },
+      benchLabel: (BASES.find((b) => b.id === benchU) || {}).label || benchU,
+    };
+    $('#updated').textContent = 'agg. ' + (updated ? new Date(updated).toLocaleDateString('it-IT') : '—');
+    recomputeLive(); recomputeOOS(); renderAll();
   }
 
   function recomputeLive() {
-    state.live = LIVE.recompute(state.metrics, state.curves, T, { ...state.portfolio.params, nSim: 150 });
+    state.live = LIVE.recompute(state.merged.metrics, state.merged.curves, T, { ...state.params, nSim: 150 });
+  }
+  function recomputeOOS() {
+    state.oos = LIVE.recomputeOOS(state.merged.curves, T, { ...state.params, nSim: 150 });
   }
 
-  // blocco backtest corrente: in-sample = live, oos = pre-calcolato
   function currentBacktest() {
-    if (state.period === 'oos') return state.portfolio.oos && state.portfolio.oos.backtest;
-    return state.live && state.live.backtest;
+    if (state.period === 'oos') return state.oos && !state.oos.insufficient ? state.oos.backtest : null;
+    return state.live && !state.live.insufficient ? state.live.backtest : null;
+  }
+
+  // ---- render --------------------------------------------------------------
+  function renderUniverseSelect() {
+    const box = $('#universe-select');
+    let h = '<span class="muted" style="font-size:12px;margin-right:4px">Universi:</span>';
+    h += BASES.map((b) => `<span class="uchip${state.universes.includes(b.id) ? ' on' : ''}" data-u="${b.id}">${b.label}</span>`).join('');
+    h += '<span class="usep"></span>';
+    h += PRESETS.map((p, i) => `<button class="upreset" data-preset="${i}">${p.label}</button>`).join('');
+    box.innerHTML = h;
+    box.querySelectorAll('[data-u]').forEach((el) => el.addEventListener('click', () => toggleUniverse(el.dataset.u)));
+    box.querySelectorAll('[data-preset]').forEach((el) => el.addEventListener('click', () => setUniverses(PRESETS[+el.dataset.preset].set)));
+  }
+
+  function toggleUniverse(u) {
+    const set = new Set(state.universes);
+    if (set.has(u)) { if (set.size > 1) set.delete(u); } else set.add(u);
+    setUniverses([...set]);
+  }
+  function setUniverses(list) {
+    if (!list.length) return;
+    state.universes = BASES.map((b) => b.id).filter((id) => list.includes(id)); // ordine stabile
+    state.basket.clear();
+    renderUniverseSelect();
+    $('#kpis').innerHTML = '<div class="kpi"><div class="lab">…</div><div class="val" style="font-size:14px">carico universi…</div></div>';
+    loadAndMerge();
   }
 
   function renderKpis() {
     const box = $('#kpis');
-    const oosB = state.portfolio.oos && state.portfolio.oos.backtest;
-    const insB = state.live && state.live.backtest;
-    const om = oosB && oosB.schemes[state.scheme] && oosB.schemes[state.scheme].metrics;
+    const insB = state.live && !state.live.insufficient ? state.live.backtest : null;
+    const oosB = state.oos && !state.oos.insufficient ? state.oos.backtest : null;
     const im = insB && insB.schemes[state.scheme] && insB.schemes[state.scheme].metrics;
+    const om = oosB && oosB.schemes[state.scheme] && oosB.schemes[state.scheme].metrics;
     const card = (lab, val, cmp) => `<div class="kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="cmp">${cmp || ''}</div></div>`;
     let html = '';
     if (om) {
       const edge = om.rebal.cagr - (oosB.benchMetrics ? oosB.benchMetrics.cagr : 0);
-      const tag = isDirty() ? ' · <span class="muted">par. default</span>' : '';
       html += card('CAGR Out-of-sample', pct(om.rebal.cagr),
-        `bench ${pct(oosB.benchMetrics && oosB.benchMetrics.cagr)} · edge <b class="${cls(edge)}">${pct(edge, 1)}</b>${tag}`);
+        `bench ${pct(oosB.benchMetrics && oosB.benchMetrics.cagr)} · edge <b class="${cls(edge)}">${pct(edge, 1)}</b>`);
       html += card('Sharpe OOS', num(om.rebal.sharpe), `MaxDD ${pct(om.rebal.mdd, 0)}`);
-    }
+    } else html += card('Out-of-sample', 'n/d', 'titoli insufficienti per la validazione');
     if (im) {
       const edge = im.rebal.cagr - (insB.benchMetrics ? insB.benchMetrics.cagr : 0);
       html += card('CAGR In-sample', pct(im.rebal.cagr),
@@ -80,10 +142,10 @@
 
   function renderBacktest() {
     const blk = currentBacktest();
-    if (!blk || !blk.schemes || !blk.schemes[state.scheme]) { CH.renderEquity([], { port: [], label: '–' }); return; }
+    if (!blk || !blk.schemes[state.scheme]) { CH.renderEquity([], { port: [], label: '–' }); CH.renderDrawdown([], [], null); return; }
     const sc = blk.schemes[state.scheme];
     const port = state.mode === 'buyhold' ? sc.buyhold : sc.rebal;
-    const label = `Coma ${state.universe} · ${schemeLabel[state.scheme]}`;
+    const label = `Coma · ${schemeLabel[state.scheme]}`;
     CH.renderEquity(blk.months, { port, bench: blk.bench, label });
     CH.renderDrawdown(blk.months, port, blk.bench);
   }
@@ -92,15 +154,14 @@
     const live = state.live;
     if (!live || live.insufficient || !live.picks.length) {
       $('#port-n').textContent = '';
-      $('#port-tbl').innerHTML = '<tr><td>Soglie troppo restrittive: nessun titolo (o storia comune insufficiente).</td></tr>';
+      $('#port-tbl').innerHTML = '<tr><td>Soglie troppo restrittive o storia comune insufficiente.</td></tr>';
       return;
     }
     const wk = wKey[state.scheme];
     const picks = live.picks.slice().sort((a, b) => b[wk] - a[wk]);
     $('#port-n').textContent = `${picks.length} titoli · ${schemeLabel[state.scheme]}` +
       (state.scheme === 'resampled' ? ` · ${live.scenarios} scenari` : '') +
-      (live.dropped ? ` · ${live.dropped} senza curva` : '') +
-      (isDirty() ? ' · live' : '');
+      (live.dropped ? ` · ${live.dropped} senza curva` : '');
     const maxW = Math.max(...picks.map((x) => x[wk]));
     let h = '<tr><th>Ticker</th><th>Peso</th><th>Quality</th><th>CAGR</th><th>MaxDD</th><th>Min 5Y</th><th>R²</th><th>Reg.</th></tr>';
     for (const x of picks) {
@@ -125,8 +186,7 @@
     for (const c of CTRLS) {
       $('#rng-' + c.k).addEventListener('input', (e) => {
         T[c.k] = +e.target.value; $('#lbl-' + c.k).textContent = c.fmt(T[c.k]);
-        renderScreenTable();
-        scheduleLive();
+        renderScreenTable(); scheduleLive();
       });
     }
   }
@@ -135,16 +195,20 @@
   function scheduleLive() {
     clearTimeout(liveTimer);
     $('#port-n').textContent = 'ricalcolo…';
-    liveTimer = setTimeout(() => { recomputeLive(); renderPortfolio(); renderKpis(); renderBacktest(); renderBasket(); }, 180);
+    liveTimer = setTimeout(() => {
+      recomputeLive(); recomputeOOS();
+      renderPortfolio(); renderKpis(); renderBacktest(); renderBasket();
+    }, 200);
   }
 
   function renderScreenTable() {
-    const res = E.screen(state.metrics.rows, { ...T, ppy: 252, sortBy: state.sortKey });
+    if (!state.merged) return;
+    const res = E.screen(state.merged.metrics.rows, { ...T, ppy: 252, sortBy: state.sortKey });
     if (state.sortDir === 1) res.picks.reverse();
     state.lastScreen = res.picks;
     const s = res.skipped;
     $('#screen-summary').innerHTML =
-      `<span class="pill">Analizzati ${state.metrics.count}</span>` +
+      `<span class="pill">Analizzati ${state.merged.metrics.count}</span>` +
       `<span class="pill">Passati ${res.passed}</span>` +
       `<span class="pill">mostrati ${res.picks.length}</span>` +
       `<span class="muted">scartati: storico ${s.storico} · 5Y neg ${s.cinqueY} · R² ${s.r2} · CAGR ${s.cagr} · DD ${s.dd}</span>`;
@@ -179,32 +243,26 @@
   // ---- portafoglio custom / salvataggio ------------------------------------
   function activeBuild() {
     if (state.basket.size >= 2) {
-      const res = LIVE.recomputeFromTickers(state.metrics, state.curves, [...state.basket], { ...state.portfolio.params, nSim: 150 });
+      const res = LIVE.recomputeFromTickers(state.merged.metrics, state.merged.curves, [...state.basket], { ...state.params, nSim: 150 });
       return { source: 'custom', res };
     }
     return { source: 'canonico', res: state.live };
   }
 
   function renderBasket() {
-    const ab = activeBuild();
-    state.build = ab;
+    if (!state.merged) return;
+    const ab = activeBuild(); state.build = ab;
     const chips = $('#basket-chips');
     if (state.basket.size) {
-      chips.innerHTML = [...state.basket].map((t) =>
-        `<span class="chip">${t}<b data-rm="${t}">×</b></span>`).join('') +
+      chips.innerHTML = [...state.basket].map((t) => `<span class="chip">${t}<b data-rm="${t}">×</b></span>`).join('') +
         `<span class="chip" style="cursor:pointer" id="basket-clear">svuota</span>`;
-      chips.querySelectorAll('[data-rm]').forEach((el) => el.addEventListener('click', () => {
-        state.basket.delete(el.dataset.rm); renderScreenTable(); renderBasket();
-      }));
+      chips.querySelectorAll('[data-rm]').forEach((el) => el.addEventListener('click', () => { state.basket.delete(el.dataset.rm); renderScreenTable(); renderBasket(); }));
       $('#basket-clear').addEventListener('click', () => { state.basket.clear(); renderScreenTable(); renderBasket(); });
-    } else {
-      chips.innerHTML = '<span class="muted">Basket vuoto — verrà salvato/esportato il portafoglio canonico corrente.</span>';
-    }
-    const box = $('#basket-metrics');
-    const r = ab.res;
+    } else chips.innerHTML = '<span class="muted">Basket vuoto — verrà salvato/esportato il portafoglio canonico corrente.</span>';
+
+    const box = $('#basket-metrics'), r = ab.res;
     if (!r || r.insufficient || !r.picks.length) { box.innerHTML = '<div class="kpi"><div class="lab">Basket</div><div class="val" style="font-size:14px">titoli insufficienti</div></div>'; return; }
-    const m = r.backtest.schemes[state.scheme].metrics.rebal;
-    const bm = r.backtest.benchMetrics;
+    const m = r.backtest.schemes[state.scheme].metrics.rebal, bm = r.backtest.benchMetrics;
     const edge = bm ? m.cagr - bm.cagr : null;
     const card = (lab, val, cmp) => `<div class="kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="cmp">${cmp || ''}</div></div>`;
     box.innerHTML =
@@ -214,33 +272,28 @@
   }
 
   async function saveSnapshot() {
-    const ab = state.build || activeBuild();
-    const r = ab.res;
+    const ab = state.build || activeBuild(), r = ab.res;
     if (!r || !r.picks || r.picks.length < 2) { setStatus('Niente da salvare', true); return; }
     const wk = wKey[state.scheme];
     const m = r.backtest.schemes[state.scheme].metrics.rebal;
-    const oosM = state.portfolio.oos && state.portfolio.oos.backtest &&
-      state.portfolio.oos.backtest.schemes[state.scheme] && state.portfolio.oos.backtest.schemes[state.scheme].metrics.rebal;
+    const oosB = state.oos && !state.oos.insufficient ? state.oos.backtest : null;
+    const oosM = oosB && oosB.schemes[state.scheme] && oosB.schemes[state.scheme].metrics.rebal;
     const snap = {
-      universe: state.universe, source: ab.source, scheme: state.scheme,
+      universes: state.universes, source: ab.source, scheme: state.scheme,
       params: { ...T }, note: ($('#snap-note').value || '').slice(0, 200),
       picks: r.picks.map((x) => ({ t: x.t, w: +(x[wk]).toFixed(4) })),
       metricsIS: { cagr: m.cagr, sharpe: m.sharpe, mdd: m.mdd },
       metricsOOS: oosM ? { cagr: oosM.cagr, sharpe: oosM.sharpe, mdd: oosM.mdd } : null,
     };
-    try {
-      setStatus('salvataggio…');
-      const id = await ComaStore.save(snap);
-      setStatus('salvato ✓'); $('#snap-note').value = '';
-      renderSnapshots();
-    } catch (e) { setStatus('errore: ' + e.message, true); }
+    try { setStatus('salvataggio…'); await ComaStore.save(snap); setStatus('salvato ✓'); $('#snap-note').value = ''; renderSnapshots(); }
+    catch (e) { setStatus('errore: ' + e.message, true); }
   }
 
   function exportExcel() {
     const ab = state.build || activeBuild();
-    const oosB = state.portfolio.oos && state.portfolio.oos.backtest;
+    const oosB = state.oos && !state.oos.insufficient ? state.oos.backtest : null;
     ComaExport.toExcel({
-      universe: state.universe, scheme: state.scheme,
+      universe: state.universes.join('+'), scheme: state.scheme,
       screenRows: state.lastScreen, portfolioPicks: ab.res ? ab.res.picks : [],
       isMetrics: ab.res && ab.res.backtest && ab.res.backtest.schemes[state.scheme].metrics,
       oosMetrics: oosB && oosB.schemes[state.scheme] && oosB.schemes[state.scheme].metrics,
@@ -257,8 +310,9 @@
       if (!snaps.length) { box.innerHTML = '<span class="muted">Nessuno snapshot salvato.</span>'; return; }
       box.innerHTML = snaps.map((s) => {
         const d = s.createdAt && s.createdAt.toDate ? s.createdAt.toDate().toLocaleString('it-IT') : '—';
+        const uni = (s.universes || [s.universe]).join('+');
         const cagr = s.metricsOOS ? pct(s.metricsOOS.cagr) : (s.metricsIS ? pct(s.metricsIS.cagr) + ' IS' : '–');
-        return `<div class="snap"><span class="ld" data-load="${s.id}">${s.universe} · ${s.source} · ${s.scheme}</span>` +
+        return `<div class="snap"><span class="ld" data-load="${s.id}">${uni} · ${s.source} · ${s.scheme}</span>` +
           `<span class="muted">${s.picks.length} titoli · OOS ${cagr} · ${d}${s.note ? ' · ' + s.note : ''}</span>` +
           `<span class="del" data-del="${s.id}">🗑</span></div>`;
       }).join('');
@@ -272,15 +326,17 @@
 
   function loadSnapshot(s) {
     if (!s) return;
-    if (s.universe !== state.universe) { $('#universe').value = s.universe; }
-    const apply = () => {
-      state.scheme = s.scheme;
-      $('#seg-scheme').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === s.scheme));
+    const unis = s.universes || [s.universe];
+    state.scheme = s.scheme;
+    $('#seg-scheme').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === s.scheme));
+    state.universes = BASES.map((b) => b.id).filter((id) => unis.includes(id));
+    if (!state.universes.length) state.universes = ['SP500'];
+    renderUniverseSelect();
+    loadAndMerge().then(() => {
       state.basket = new Set(s.picks.map((p) => p.t));
       renderScreenTable(); renderBasket(); renderKpis(); renderBacktest();
       document.querySelector('#build-card').scrollIntoView({ behavior: 'smooth' });
-    };
-    if (s.universe !== state.universe) loadUniverse(s.universe).then(apply); else apply();
+    });
   }
 
   function renderAll() { renderKpis(); renderBacktest(); renderPortfolio(); renderScreenTable(); renderBasket(); }
@@ -295,9 +351,7 @@
   }
 
   function init() {
-    const sel = $('#universe');
-    sel.innerHTML = UNIVERSES.map((u) => `<option value="${u}">${u}</option>`).join('');
-    sel.addEventListener('change', () => loadUniverse(sel.value));
+    renderUniverseSelect();
     renderScreenCtrls();
     bindSeg('#seg-period', 'period', renderBacktest);
     bindSeg('#seg-scheme', 'scheme', () => { renderKpis(); renderBacktest(); renderPortfolio(); renderBasket(); });
@@ -306,7 +360,7 @@
     $('#btn-export').addEventListener('click', exportExcel);
     ComaStore.init();
     renderSnapshots();
-    loadUniverse('SP500');
+    loadAndMerge();
   }
   document.addEventListener('DOMContentLoaded', init);
 })();
