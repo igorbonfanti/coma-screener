@@ -1,0 +1,13 @@
+{
+  "name": "Coma Screener — Aziende da Coma",
+  "short_name": "Coma Screener",
+  "description": "Screener azionario buy & hold di lungo periodo (metodologia M. Rea)",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f1117",
+  "theme_color": "#0f1117",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

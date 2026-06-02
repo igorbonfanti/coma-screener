@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coma Screener — Aziende da Coma</title>
+<meta name="theme-color" content="#0f1117">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+<style>
+:root{
+  --bg:#0f1117; --bg2:#161922; --bg3:#1d212c; --line:#272c38;
+  --tx:#e6e8ee; --tx2:#9aa3b2; --tx3:#6b7280;
+  --amber:#f59e0b; --amber2:#fbbf24; --green:#34d399; --red:#f87171; --blue:#60a5fa;
+  --r:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:'DM Sans',system-ui,sans-serif;line-height:1.5;font-size:14px}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:var(--amber);text-decoration:none}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 18px 80px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--amber),#b45309);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;color:#1a1205}
+h1{font-size:19px;font-weight:700;letter-spacing:-.3px}
+.sub{color:var(--tx2);font-size:12px}
+select,button,input{font-family:inherit}
+.usel{background:var(--bg3);color:var(--tx);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer}
+.banner{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:var(--r);padding:12px 14px;margin-bottom:18px;display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:var(--tx2)}
+.banner b{color:var(--amber2)}
+.banner .x{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:18px;line-height:1;padding:0 4px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.kpi .lab{color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.kpi .val{font-size:24px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.kpi .cmp{font-size:11.5px;color:var(--tx2);margin-top:3px}
+.card{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:18px}
+.card h2{font-size:15px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.card .desc{color:var(--tx3);font-size:12px;margin-bottom:14px}
+.row{display:flex;gap:18px;flex-wrap:wrap}
+.col{flex:1;min-width:300px}
+.seg{display:inline-flex;background:var(--bg3);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px}
+.seg button{background:none;border:none;color:var(--tx2);padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
+.seg button.on{background:var(--amber);color:#1a1205}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--tx3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;user-select:none}
+th:first-child,td:first-child{text-align:left}
+td.tk{font-weight:600;font-family:'JetBrains Mono',monospace}
+tr:hover td{background:rgba(255,255,255,.02)}
+.wbar{display:inline-block;height:7px;border-radius:4px;background:var(--amber);vertical-align:middle;margin-right:6px}
+.pos{color:var(--green)}.neg{color:var(--red)}
+.chart-box{position:relative;height:300px}
+.ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px 22px;margin-bottom:16px}
+.ctrl label{display:flex;justify-content:space-between;font-size:12px;color:var(--tx2);margin-bottom:6px}
+.ctrl label b{color:var(--amber2);font-family:'JetBrains Mono',monospace}
+input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer}
+.pill{display:inline-block;background:var(--bg3);border:1px solid var(--line);border-radius:20px;padding:3px 10px;font-size:11.5px;color:var(--tx2);margin-right:6px}
+.muted{color:var(--tx3)}
+.btn{background:var(--amber);color:#1a1205;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
+.btn.ghost{background:var(--bg3);color:var(--tx);border:1px solid var(--line)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--line);border-radius:20px;padding:4px 9px 4px 11px;font-size:12px;font-family:'JetBrains Mono',monospace;margin:0 6px 6px 0}
+.chip b{cursor:pointer;color:var(--tx3);font-size:14px;line-height:1}
+.star{cursor:pointer;color:var(--tx3);user-select:none;font-size:15px}
+.star.on{color:var(--amber)}
+.build-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0}
+.build-actions input{background:var(--bg3);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--tx);font-size:13px;min-width:200px;flex:1}
+.snap{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--tx2)}
+.snap .ld{cursor:pointer;color:var(--amber)}
+.snap .del{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:16px}
+.foot{text-align:center;color:var(--tx3);font-size:11px;margin-top:30px}
+@media(max-width:640px){.chart-box{height:240px}.kpi .val{font-size:20px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo">C</div>
+      <div>
+        <h1>Coma Screener</h1>
+        <div class="sub">Aziende da coma — buy &amp; hold di lungo periodo · <span id="updated" class="muted">…</span></div>
+      </div>
+    </div>
+    <select id="universe" class="usel"></select>
+  </header>
+
+  <div class="banner" id="caveat">
+    <span>⚠️</span>
+    <div><b>Leggi prima di fidarti dei numeri.</b> Lo screening usa i titoli <b>oggi</b> nell'indice con ≥20 anni di storia: per costruzione seleziona solo i <b>sopravvissuti</b> (survivorship bias) → il backtest <b>in-sample</b> è ottimistico e circolare. Affidati al backtest <b>out-of-sample</b> (selezione fatta nel passato, testata in avanti): è l'unico onesto. Non è una raccomandazione d'investimento.</div>
+    <span class="x" onclick="this.parentNode.style.display='none'">×</span>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <h2>📈 Backtest portafoglio canonico</h2>
+    <div class="desc">Curva equity (base 100, scala log) e drawdown. Confronta in-sample vs out-of-sample.</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="seg" id="seg-period">
+        <button data-v="oos" class="on">Out-of-sample</button>
+        <button data-v="insample">In-sample</button>
+      </div>
+      <div class="seg" id="seg-scheme">
+        <button data-v="equal" class="on">Equipeso</button>
+        <button data-v="invvol">Risk-parity</button>
+        <button data-v="resampled">Max-Sharpe</button>
+      </div>
+      <div class="seg" id="seg-mode">
+        <button data-v="rebal" class="on">Ribilanciato</button>
+        <button data-v="buyhold">Buy &amp; hold</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col"><div class="chart-box"><canvas id="equity"></canvas></div></div>
+      <div class="col"><div class="chart-box"><canvas id="drawdown"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🎯 Portafoglio canonico <span class="pill" id="port-n"></span></h2>
+    <div class="desc">Top titoli per Score, pesati con Resampled Sharpe Optimization (cap 20% / floor 2%).</div>
+    <div style="overflow-x:auto"><table id="port-tbl"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>🔎 Screening interattivo</h2>
+    <div class="desc">Muovi le soglie: il filtro gira nel browser sulle metriche già calcolate, istantaneo.</div>
+    <div class="ctrls" id="screen-ctrls"></div>
+    <div style="margin-bottom:12px" id="screen-summary" class="muted"></div>
+    <div style="overflow-x:auto"><table id="screen-tbl"></table></div>
+  </div>
+
+  <div class="card" id="build-card">
+    <h2>💾 Costruisci &amp; salva</h2>
+    <div class="desc">Clicca ★ nella tabella screening per aggiungere titoli a un basket custom. Basket vuoto = usa il portafoglio canonico corrente. I pesi seguono lo schema selezionato sopra.</div>
+    <div id="basket-chips"></div>
+    <div id="basket-metrics" class="kpis" style="margin:14px 0 0"></div>
+    <div class="build-actions">
+      <input id="snap-note" placeholder="Nota (opzionale) — es. revisione giugno">
+      <button class="btn" id="btn-save">💾 Salva snapshot</button>
+      <button class="btn ghost" id="btn-export">📊 Esporta Excel</button>
+      <span id="save-status" class="muted"></span>
+    </div>
+    <div style="margin-top:6px">
+      <div class="lab" style="color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Snapshot salvati</div>
+      <div id="snapshots" class="muted">…</div>
+    </div>
+  </div>
+
+  <div class="foot">coma-screener · dati Yahoo Finance, total return in EUR · metodologia "Aziende da Coma" (M. Rea) · uso personale</div>
+</div>
+
+<script src="scripts/engine.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/live.js"></script>
+<script src="js/store.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}</script>
+</body>
+</html>
