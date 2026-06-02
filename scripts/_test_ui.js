@@ -89,6 +89,12 @@ setTimeout(() => {
     ck($('#kpis').textContent.includes('Out-of-sample'), 'OOS live anche su combo');
     ck($('#port-tbl').querySelectorAll('tr').length > 3, 'portafoglio su combo');
 
+    // reset filtri: modifica una soglia e ripristina
+    const rr = $('#rng-minR2'); rr.value = 0.99; rr.dispatchEvent(new window.Event('input'));
+    $('#btn-reset').click();
+    ck($('#rng-minR2').value === '0.9', 'reset filtri riporta R² al default (' + $('#rng-minR2').value + ')');
+    ck($('#rng-maxDD').value === '-0.45', 'reset filtri riporta MaxDD al default');
+
     // basket custom
     const stars = $('#screen-tbl').querySelectorAll('[data-star]');
     stars[0].click(); stars[1].click();

@@ -242,6 +242,18 @@
     }
   }
 
+  function resetFilters() {
+    Object.assign(T, DEFAULT_T);
+    for (const c of CTRLS) {
+      const el = $('#rng-' + c.k);
+      if (el) { el.value = T[c.k]; $('#lbl-' + c.k).textContent = c.fmt(T[c.k]); }
+    }
+    state.sortKey = 'quality'; state.sortDir = -1;
+    renderScreenTable();
+    recomputeLive(); recomputeOOS();
+    renderPortfolio(); renderKpis(); renderBacktest(); renderBasket();
+  }
+
   let liveTimer = null;
   function scheduleLive() {
     clearTimeout(liveTimer);
@@ -409,6 +421,7 @@
     bindSeg('#seg-mode', 'mode', renderBacktest);
     $('#btn-save').addEventListener('click', saveSnapshot);
     $('#btn-export').addEventListener('click', exportExcel);
+    $('#btn-reset').addEventListener('click', resetFilters);
     ComaStore.init();
     renderSnapshots();
     fetch('data/benchmarks.json').then((r) => r.json()).then((b) => { state.benchmarks = b; }).catch(() => {}).finally(loadAndMerge);
