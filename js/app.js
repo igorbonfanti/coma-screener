@@ -9,7 +9,7 @@
   const wKey = { equal: 'wEqual', invvol: 'wInvvol', resampled: 'wResampled' };
   const schemeLabel = { equal: 'Equipeso', invvol: 'Risk-parity', resampled: 'Max-Sharpe' };
 
-  const UNIVERSES = ['SP500', 'STOXX600'];
+  const UNIVERSES = ['SP500', 'STOXX600', 'NASDAQ'];
   const DEFAULT_T = { minYears: 15, tolerance5y: -0.05, minR2: 0.90, minCagr: 0.10, maxDD: -0.45, topN: 20 };
   const T = { ...DEFAULT_T };
   let state = { universe: 'SP500', metrics: null, portfolio: null, curves: null, live: null,

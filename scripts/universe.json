@@ -28,6 +28,16 @@
         "EDP.LS","GALP.LS","JMT.LS"
       ]
     },
+    "NASDAQ": {
+      "label": "USA (NASDAQ + NYSE)",
+      "benchmark": "^GSPC",
+      "source": null,
+      "txtSources": [
+        "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt",
+        "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt"
+      ],
+      "tickers": []
+    },
     "CUSTOM": {
       "label": "Lista personalizzata",
       "benchmark": "^GSPC",

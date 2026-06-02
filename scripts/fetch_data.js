@@ -46,6 +46,23 @@ function toMonthly(ts, px) {
 
 // ---- universo --------------------------------------------------------------
 async function loadTickers(uname, cfg) {
+  // liste ticker da file di testo (uno per riga), es. NASDAQ+NYSE
+  if (cfg.txtSources && cfg.txtSources.length) {
+    const set = new Set();
+    for (const url of cfg.txtSources) {
+      try {
+        const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const text = await res.text();
+        for (let line of text.split('\n')) {
+          line = line.trim().toUpperCase().replace(/\./g, '-');
+          if (line && line.length <= 6 && !['NAN', 'SYMBOL', 'TICKER'].includes(line)) set.add(line);
+        }
+      } catch (e) { log(`  errore fonte txt ${url}: ${e.message}`); }
+    }
+    const out = [...set].concat(cfg.tickers || []);
+    log(`  ${uname}: ${out.length} ticker da liste txt`);
+    return out;
+  }
   if (cfg.tickers && cfg.tickers.length && !cfg.source) return cfg.tickers.slice();
   if (cfg.source) {
     try {
@@ -296,8 +313,9 @@ async function run(uname) {
   } else log('OOS: nessun titolo supera i filtri pre-cutoff');
 
   // curve mensili EUR per il pool eleggibile (per ribilanciamenti custom nel browser)
-  // pool ampio (storia >= 8 anni) per supportare il ricalcolo live su tutto il range slider
-  const eligible = rows.filter((r) => r.days >= 8 * PPY).map((r) => r.t);
+  // pool per il ricalcolo live: storia >= 8 anni e R2 >= 0.70 (= minimo degli slider),
+  // così copre ogni selezione possibile senza gonfiare il file con la coda di junk.
+  const eligible = rows.filter((r) => r.days >= 8 * PPY && r.r2 >= 0.70).map((r) => r.t);
   const curvesOut = { updated: new Date().toISOString(), base: 'EUR', freq: 'M', series: {} };
   for (const t of eligible) {
     const m = toMonthly(eur[t].ts, eur[t].px);
