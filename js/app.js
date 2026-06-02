@@ -413,7 +413,27 @@
     });
   }
 
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('coma-theme', t); } catch (e) {}
+    const btn = $('#theme-toggle'); if (btn) btn.textContent = t === 'light' ? '☀️' : '🌙';
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'light' ? '#f5f7fa' : '#0f1117');
+  }
+  function initTheme() {
+    let t = 'dark'; try { t = localStorage.getItem('coma-theme') || 'dark'; } catch (e) {}
+    applyTheme(t);
+    $('#theme-toggle').addEventListener('click', () => {
+      const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+      applyTheme(cur === 'light' ? 'dark' : 'light');
+      renderBacktest(); // i grafici rileggono i colori del tema
+    });
+  }
+
+  let inited = false;
   function init() {
+    if (inited) return; // guardia contro doppio DOMContentLoaded
+    inited = true;
+    initTheme();
     renderUniverseSelect();
     renderScreenCtrls();
     bindSeg('#seg-period', 'period', renderBacktest);

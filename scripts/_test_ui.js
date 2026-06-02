@@ -74,6 +74,13 @@ setTimeout(() => {
   ck($('#bench-name').textContent.includes('S&P 500'), 'benchmark mostrato (S&P 500 per SP500)');
   ck([...$('#port-tbl').querySelectorAll('th')].some((th) => th.title && th.title.length > 10), 'tooltip su intestazioni portafoglio');
   ck([...$('#universe-select').querySelectorAll('[data-u]')].every((el) => el.title), 'tooltip su toggle universi');
+  // toggle tema chiaro/scuro
+  ck(!!$('#theme-toggle'), 'toggle tema presente');
+  $('#theme-toggle').click();
+  ck(window.document.documentElement.getAttribute('data-theme') === 'light', 'toggle → tema chiaro');
+  ck($('#theme-toggle').textContent === '☀️', 'icona aggiornata');
+  $('#theme-toggle').click();
+  ck(window.document.documentElement.getAttribute('data-theme') === 'dark', 'toggle → tema scuro');
 
   const countSP = state_count();
   function state_count() { return +($('#screen-summary').textContent.match(/Analizzati (\d+)/) || [])[1] || 0; }

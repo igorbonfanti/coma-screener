@@ -1,5 +1,5 @@
 /* Service worker coma-screener — app shell cache-first, dati network-first. */
-const VERSION = 'coma-v4';
+const VERSION = 'coma-v5';
 const SHELL = [
   './', './index.html', './manifest.json', './icon.svg',
   './scripts/engine.js', './js/charts.js', './js/live.js',

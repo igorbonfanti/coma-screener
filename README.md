@@ -1,4 +1,4 @@
-# Coma Screener — Aziende da Coma · v1.3.0
+# Coma Screener — Aziende da Coma · v1.4.0
 
 Screener azionario per individuare **compounder di lungo periodo** ("aziende da coma": comprale e dimenticale) secondo la metodologia di Massimo Rea, con backtest **out-of-sample** onesto.
 
