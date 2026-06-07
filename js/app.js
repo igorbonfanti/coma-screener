@@ -415,12 +415,12 @@
 
   function applyTheme(t) {
     document.documentElement.setAttribute('data-theme', t);
-    try { localStorage.setItem('coma-theme', t); } catch (e) {}
+    try { localStorage.setItem('antigravity-theme', t); } catch (e) {}
     const btn = $('#theme-toggle'); if (btn) btn.textContent = t === 'light' ? '☀️' : '🌙';
     document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'light' ? '#f5f7fa' : '#0f1117');
   }
   function initTheme() {
-    let t = 'dark'; try { t = localStorage.getItem('coma-theme') || 'dark'; } catch (e) {}
+    let t = 'dark'; try { t = localStorage.getItem('antigravity-theme') || localStorage.getItem('coma-theme') || 'dark'; } catch (e) {}
     applyTheme(t);
     $('#theme-toggle').addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
