@@ -1,12 +1,17 @@
-/* store.js — persistenza snapshot su Firebase Firestore (progetto condiviso
- * magazzino-edile-pos, namespace coma_snapshots). Degrada con grazia offline. */
+/* store.js — persistenza snapshot su Firebase Firestore (progetto
+ * igorbonfanti-screener, collection coma_snapshots). Degrada con grazia offline.
+ *
+ * Progetto separato da magazzino-edile-pos, dove questa app conviveva con i
+ * dati aziendali. Qui la lettura e' pubblica e la scrittura richiede un utente
+ * autenticato: salvare ed eliminare funzionano solo dopo l'accesso, gestito da
+ * auth-opzionale.js. */
 (function () {
   'use strict';
   const CONFIG = {
-    apiKey: 'AIzaSyCLdOfp4z3FUJX2xt-xBZciyjxJZWeoh7A',
-    authDomain: 'magazzino-edile-pos.firebaseapp.com',
-    projectId: 'magazzino-edile-pos',
-    storageBucket: 'magazzino-edile-pos.appspot.com',
+    apiKey: 'AIzaSyCJK3ewMh6T8GHWbJx_WB39JYIYYifoyl8',
+    authDomain: 'igorbonfanti-screener.firebaseapp.com',
+    projectId: 'igorbonfanti-screener',
+    storageBucket: 'igorbonfanti-screener.firebasestorage.app',
   };
   const COLL = 'coma_snapshots';
   let db = null, ready = false;

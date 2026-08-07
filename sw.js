@@ -1,9 +1,14 @@
 /* Service worker coma-screener — app shell cache-first, dati network-first. */
-const VERSION = 'coma-v5';
+// v6: progetto Firebase separato (igorbonfanti-screener) e accesso opzionale.
+// Alzare SEMPRE la versione quando cambia un file in SHELL: la shell e'
+// cache-first, quindi senza un nome nuovo i client gia' installati
+// resterebbero puntati al vecchio progetto.
+const VERSION = 'coma-v6';
 const SHELL = [
   './', './index.html', './manifest.json', './icon.svg',
   './scripts/engine.js', './js/charts.js', './js/live.js',
   './js/store.js', './js/export.js', './js/app.js',
+  './auth-opzionale.js',
 ];
 
 self.addEventListener('install', (e) => {
