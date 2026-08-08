@@ -78,6 +78,13 @@ setTimeout(() => {
   ck($('#screen-tbl').querySelector('thead'), 'screening ha thead');
   ck($('#screen-summary').querySelector('.funnel'), 'imbuto dei filtri renderizzato');
   ck($('#screen-tbl').querySelector('th[aria-sort]'), 'colonna ordinata marcata con aria-sort');
+  // sparkline e istogrammi: le due idee che mostrano invece di far dedurre
+  ck($('#screen-tbl').querySelectorAll('tbody .spark path').length > 3, 'sparkline nella tabella screening');
+  ck($('#port-tbl').querySelectorAll('tbody .spark path').length > 3, 'sparkline nel portafoglio');
+  ck($('#screen-ctrls').querySelectorAll('svg.hist').length >= 5, 'istogramma dietro gli slider');
+  ck($('#hist-minR2').querySelectorAll('.bar.in').length > 0 &&
+     $('#hist-minR2').querySelectorAll('.bar:not(.in)').length > 0,
+    'istogramma distingue i bin che passano la soglia');
   ck([...$('#seg-scheme').querySelectorAll('button')].every((b) => b.hasAttribute('aria-pressed')),
     'segmented control con aria-pressed');
   // avviso metodologico richiudibile, con richiamo compatto
@@ -105,11 +112,14 @@ setTimeout(() => {
   ck([...$('#universe-select').querySelectorAll('[data-u]')].every((el) => el.title), 'tooltip su toggle universi');
   // toggle tema chiaro/scuro
   ck(!!$('#theme-toggle'), 'toggle tema presente');
+  const themeOf = () => window.document.documentElement.getAttribute('data-theme');
+  const t0 = themeOf();
+  ck(t0 === 'light', 'tema di default chiaro (impianto "nota di ricerca"): ' + t0);
   $('#theme-toggle').click();
-  ck(window.document.documentElement.getAttribute('data-theme') === 'light', 'toggle → tema chiaro');
-  ck($('#theme-toggle').textContent === '☀️', 'icona aggiornata');
+  ck(themeOf() === 'dark', 'toggle → tema scuro');
+  ck($('#theme-toggle').textContent === '☀', 'icona aggiornata: ' + $('#theme-toggle').textContent);
   $('#theme-toggle').click();
-  ck(window.document.documentElement.getAttribute('data-theme') === 'dark', 'toggle → tema scuro');
+  ck(themeOf() === 'light', 'toggle → torna chiaro');
 
   const countSP = state_count();
   function state_count() { return +($('#screen-summary').textContent.match(/Analizzati (\d+)/) || [])[1] || 0; }

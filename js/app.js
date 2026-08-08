@@ -65,6 +65,8 @@
     topN: 'Quanti titoli compongono il portafoglio (i migliori per Quality).',
     // intestazioni colonne
     t: 'Simbolo (ticker) del titolo.',
+    spark: 'Andamento del prezzo (total return, EUR) sulla finestra di test, in scala logaritmica. ' +
+      'È la "regolarità" di cui parla la metodologia: una retta è il caso ideale, i gradini e i tuffi si vedono a occhio.',
     w: 'Quota nel portafoglio secondo lo schema di pesi selezionato.',
     quality: 'Coma Quality Score: media dei percentili di R², Min 5Y e MAR (0–1, più alto = meglio).',
     cagr: 'CAGR: rendimento annuo composto storico.',
@@ -87,15 +89,87 @@
     f_keep: 'Titoli che superano tutte le soglie. In tabella ne compaiono al massimo "Numero titoli".',
   };
 
+  // `get` = valore della metrica su cui la soglia agisce (per l'istogramma).
+  // Tutti i filtri sono "passa se valore >= soglia", quindi le barre a destra
+  // della soglia sono quelle che sopravvivono.
   const CTRLS = [
     // max 22: le serie in EUR partono da dicembre 2003 (limite di EURUSD=X su Yahoo)
-    { k: 'minYears', label: 'Storia minima', min: 5, max: 22, step: 1, fmt: (v) => v + ' anni' },
-    { k: 'tolerance5y', label: 'Tolleranza 5Y', min: -0.30, max: 0, step: 0.01, fmt: (v) => pct(v, 0) },
-    { k: 'minR2', label: 'R² minimo', min: 0.70, max: 0.99, step: 0.01, fmt: (v) => num(v, 2) },
-    { k: 'minCagr', label: 'CAGR minimo', min: 0, max: 0.25, step: 0.01, fmt: (v) => pct(v, 0) },
-    { k: 'maxDD', label: 'Max Drawdown', min: -0.80, max: -0.20, step: 0.05, fmt: (v) => pct(v, 0) },
+    { k: 'minYears', label: 'Storia minima', min: 5, max: 22, step: 1, fmt: (v) => v + ' anni', get: (r) => r.days / 252 },
+    { k: 'tolerance5y', label: 'Tolleranza 5Y', min: -0.30, max: 0, step: 0.01, fmt: (v) => pct(v, 0), get: (r) => r.min5y },
+    { k: 'minR2', label: 'R² minimo', min: 0.70, max: 0.99, step: 0.01, fmt: (v) => num(v, 2), get: (r) => r.r2 },
+    { k: 'minCagr', label: 'CAGR minimo', min: 0, max: 0.25, step: 0.01, fmt: (v) => pct(v, 0), get: (r) => r.cagr },
+    { k: 'maxDD', label: 'Max Drawdown', min: -0.80, max: -0.20, step: 0.05, fmt: (v) => pct(v, 0), get: (r) => r.mdd },
     { k: 'topN', label: 'Numero titoli', min: 5, max: 40, step: 1, fmt: (v) => v },
   ];
+  const HIST_BINS = 32;
+
+  /**
+   * Sparkline: la curva del titolo sulla finestra di test, in scala log.
+   * La metodologia parla di "regolarita della curva" e finora te la faceva
+   * dedurre da un numero (R² 0.982): questa te la fa vedere.
+   */
+  function sparkline(t, months) {
+    const c = state.merged && state.merged.curves.series[t];
+    if (!c || !c.p || c.p.length < 24) return '';
+    let p = c.p.slice(Math.max(0, c.p.length - (months || 180))).filter((x) => x > 0);
+    if (p.length < 24) return '';
+    const W = 64, H = 18, pad = 1.5, MAXPT = 64;
+    if (p.length > MAXPT) {                       // sottocampiona: 64px non reggono 180 punti
+      const k = (p.length - 1) / (MAXPT - 1);
+      p = Array.from({ length: MAXPT }, (_, i) => p[Math.round(i * k)]);
+    }
+    const ys = p.map(Math.log);
+    const lo = Math.min(...ys), hi = Math.max(...ys), rng = (hi - lo) || 1;
+    const step = (W - 2 * pad) / (p.length - 1);
+    let d = '';
+    for (let i = 0; i < p.length; i++) {
+      const x = pad + i * step;
+      const y = H - pad - ((ys[i] - lo) / rng) * (H - 2 * pad);
+      d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }
+    return `<svg class="spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}"/></svg>`;
+  }
+
+  /** Conteggi per bin sulla scala dello slider, così l'istogramma e la soglia coincidono. */
+  function buildHist(rows, c) {
+    if (!c.get) return null;
+    const bins = new Array(HIST_BINS).fill(0);
+    const span = c.max - c.min || 1;
+    for (const r of rows) {
+      const v = c.get(r);
+      if (!isFinite(v)) continue;
+      const i = Math.max(0, Math.min(HIST_BINS - 1, Math.floor(((v - c.min) / span) * HIST_BINS)));
+      bins[i]++;
+    }
+    return bins;
+  }
+
+  /** Istogramma dell'universo: altezze in radice, così i bin piccoli restano visibili. */
+  function histSvg(c) {
+    const bins = state.hist && state.hist[c.k];
+    if (!bins) return '';
+    const maxV = Math.sqrt(Math.max(1, Math.max.apply(null, bins)));
+    const w = 100 / HIST_BINS;
+    let r = '';
+    for (let i = 0; i < HIST_BINS; i++) {
+      const h = (Math.sqrt(bins[i]) / maxV) * 100;
+      if (h <= 0) continue;
+      r += `<rect class="bar" data-i="${i}" x="${(i * w).toFixed(3)}" y="${(100 - h).toFixed(2)}" ` +
+        `width="${(w * 0.82).toFixed(3)}" height="${h.toFixed(2)}"/>`;
+    }
+    return `<svg class="hist" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${r}</svg>`;
+  }
+
+  /** Colora di accento i bin che sopravvivono alla soglia corrente. */
+  function paintHist(c) {
+    const svg = $('#hist-' + c.k);
+    if (!svg) return;
+    const span = c.max - c.min || 1;
+    const cutoff = ((T[c.k] - c.min) / span) * HIST_BINS;
+    svg.querySelectorAll('.bar').forEach((b) => {
+      b.classList.toggle('in', +b.dataset.i + 1 > cutoff);
+    });
+  }
 
   // ---- caricamento + merge -------------------------------------------------
   async function loadBase(u) {
@@ -113,8 +187,8 @@
     if (!window.ComaUI) return;
     ComaUI.skeletonCards(4, '#kpis');
     ComaUI.skeletonCards(3, '#kpis-is');
-    ComaUI.skeletonRows(6, '#port-tbl', 8);
-    ComaUI.skeletonRows(8, '#screen-tbl', 11);
+    ComaUI.skeletonRows(6, '#port-tbl', 9);
+    ComaUI.skeletonRows(8, '#screen-tbl', 12);
     $('#verdict').innerHTML = '<div class="verdict idle"><div class="vi">⏳</div><div>' +
       '<div class="vt">Carico gli universi…</div>' +
       '<div class="vd">Metriche e curve vengono lette dai dati pre-calcolati, poi il portafoglio e il backtest si ricalcolano qui nel browser.</div></div></div>';
@@ -159,6 +233,10 @@
       benchLabel: bm.label,
     };
     $('#updated').textContent = 'agg. ' + (updated ? new Date(updated).toLocaleDateString('it-IT') : '—');
+    // istogrammi: dipendono dall'universo, quindi si ricalcolano a ogni merge
+    state.hist = {};
+    for (const c of CTRLS) { const b = buildHist(rows, c); if (b) state.hist[c.k] = b; }
+    renderScreenCtrls();
     recomputeLive(); recomputeOOS(); renderAll();
   }
 
@@ -316,7 +394,7 @@
     if (!live || live.insufficient || !live.picks.length) {
       $('#port-n').textContent = 'nessun titolo';
       $('#port-tbl').innerHTML = emptyState('Nessun portafoglio con queste soglie',
-        'Le soglie sono troppo restrittive, oppure i titoli superstiti non hanno una storia comune abbastanza lunga. Prova ad abbassare R² o CAGR minimo, o ad aggiungere un universo.', 8);
+        'Le soglie sono troppo restrittive, oppure i titoli superstiti non hanno una storia comune abbastanza lunga. Prova ad abbassare R² o CAGR minimo, o ad aggiungere un universo.', 9);
       return;
     }
     const wk = wKey[state.scheme];
@@ -329,11 +407,14 @@
       (to ? ` · turnover ${(to * 100).toFixed(0)}%/anno` : '') +
       (live.dropped ? ` · ${live.dropped} esclusi (curva o copertura)` : '');
     const maxW = Math.max(...picks.map((x) => x[wk]));
-    const ph = [['t', 'Ticker'], ['w', 'Peso'], ['quality', 'Quality'], ['cagr', 'CAGR'], ['mdd', 'MaxDD'], ['min5y', 'Min 5Y'], ['r2', 'R²'], ['reg', 'Reg.']];
+    const winMonths = bt ? Math.round((T.minYears || 15) * 12) : 180;
+    const ph = [['t', 'Ticker'], ['w', 'Peso'], ['spark', 'Curva'], ['quality', 'Quality'],
+      ['cagr', 'CAGR'], ['mdd', 'MaxDD'], ['min5y', 'Min 5Y'], ['r2', 'R²'], ['reg', 'Reg.']];
     let h = '<thead><tr>' + ph.map(([k, l]) => `<th scope="col" title="${TIPS[k]}">${l}</th>`).join('') + '</tr></thead><tbody>';
     for (const x of picks) {
       h += `<tr><td class="tk">${x.t}</td>` +
         `<td><span class="wbar" style="width:${(x[wk] / maxW * 46).toFixed(0)}px"></span>${pct(x[wk])}</td>` +
+        `<td>${sparkline(x.t, winMonths)}</td>` +
         `<td>${num(x.quality, 2)}</td>` +
         `<td class="${cls(x.cagr)}">${pct(x.cagr, 0)}</td>` +
         `<td class="neg">${pct(x.mdd, 0)}</td>` +
@@ -346,17 +427,21 @@
   function renderScreenCtrls() {
     let h = '';
     for (const c of CTRLS) {
+      const hist = histSvg(c);
       h += `<div class="ctrl"><label for="rng-${c.k}" title="${TIPS[c.k]}">` +
         `<span>${c.label} <span class="info">i</span></span> <b id="lbl-${c.k}">${c.fmt(T[c.k])}</b></label>` +
+        (hist ? hist.replace('class="hist"', `class="hist" id="hist-${c.k}"`) : '') +
         `<input type="range" id="rng-${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${T[c.k]}" ` +
         `aria-label="${c.label}" aria-valuetext="${c.fmt(T[c.k])}"></div>`;
     }
     $('#screen-ctrls').innerHTML = h;
     for (const c of CTRLS) {
+      paintHist(c);
       $('#rng-' + c.k).addEventListener('input', (e) => {
         T[c.k] = +e.target.value;
         $('#lbl-' + c.k).textContent = c.fmt(T[c.k]);
         e.target.setAttribute('aria-valuetext', c.fmt(T[c.k]));
+        paintHist(c);
         renderScreenTable(); scheduleLive();
       });
     }
@@ -366,7 +451,7 @@
     Object.assign(T, DEFAULT_T);
     for (const c of CTRLS) {
       const el = $('#rng-' + c.k);
-      if (el) { el.value = T[c.k]; $('#lbl-' + c.k).textContent = c.fmt(T[c.k]); }
+      if (el) { el.value = T[c.k]; $('#lbl-' + c.k).textContent = c.fmt(T[c.k]); paintHist(c); }
     }
     state.sortKey = 'quality'; state.sortDir = -1;
     renderScreenTable();
@@ -403,9 +488,9 @@
       (res.picks.length < res.passed ? step('in tabella (top N)', res.picks.length) : '') +
       '</div>';
 
-    const cols = [['t', 'Ticker'], ['quality', 'Quality'], ['cagr', 'CAGR'], ['vol', 'Vol'],
+    const cols = [['t', 'Ticker'], ['spark', 'Curva'], ['quality', 'Quality'], ['cagr', 'CAGR'], ['vol', 'Vol'],
       ['mdd', 'MaxDD'], ['min5y', 'Min5Y'], ['r2', 'R²'], ['reg', 'Reg.'], ['mar', 'MAR'], ['sortino', 'Sortino']];
-    const sortable = (k) => k !== 'mdd' && k !== 'reg' && k !== 't';
+    const sortable = (k) => k !== 'mdd' && k !== 'reg' && k !== 't' && k !== 'spark';
     let h = '<thead><tr><th scope="col" title="Clicca ★ per aggiungere il titolo al basket custom in fondo alla pagina"><span class="sr-only">Basket</span>★</th>' +
       cols.map(([k, l]) => {
         const on = state.sortKey === k;
@@ -423,6 +508,7 @@
         h += `<tr><td><span class="star${on}" data-star="${r.t}" role="button" tabindex="0" ` +
           `aria-label="${on ? 'Togli' : 'Aggiungi'} ${r.t} ${on ? 'dal' : 'al'} basket">${on ? '★' : '☆'}</span></td>` +
           `<td class="tk">${r.t}</td>` +
+          `<td>${sparkline(r.t, Math.round((T.minYears || 15) * 12))}</td>` +
           `<td><b>${num(r.quality, 2)}</b></td>` +
           `<td class="${cls(r.cagr)}">${pct(r.cagr, 0)}</td>` +
           `<td>${pct(r.vol, 0)}</td>` +
@@ -592,11 +678,12 @@
   function applyTheme(t) {
     document.documentElement.setAttribute('data-theme', t);
     try { localStorage.setItem('antigravity-theme', t); } catch (e) {}
-    const btn = $('#theme-toggle'); if (btn) btn.textContent = t === 'light' ? '☀️' : '🌙';
-    document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'light' ? '#f5f7fa' : '#0f1117');
+    const btn = $('#theme-toggle');
+    if (btn) { btn.textContent = t === 'light' ? '☾' : '☀'; btn.title = t === 'light' ? 'Passa al tema scuro' : 'Passa al tema chiaro'; }
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'light' ? '#fbf7f1' : '#15130f');
   }
   function initTheme() {
-    let t = 'dark'; try { t = localStorage.getItem('antigravity-theme') || localStorage.getItem('coma-theme') || 'dark'; } catch (e) {}
+    let t = 'light'; try { t = localStorage.getItem('antigravity-theme') || localStorage.getItem('coma-theme') || 'light'; } catch (e) {}
     applyTheme(t);
     $('#theme-toggle').addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';

@@ -4,207 +4,280 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Coma Screener — Aziende da Coma</title>
-<meta name="theme-color" content="#0f1117">
+<meta name="theme-color" content="#fbf7f1">
 <link rel="manifest" href="manifest.json">
-<script>(function(){try{var t=localStorage.getItem('antigravity-theme')||localStorage.getItem('coma-theme')||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<script>(function(){try{var t=localStorage.getItem('antigravity-theme')||localStorage.getItem('coma-theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 <style>
+/* ============================================================================
+ * Impianto "nota di ricerca": carta calda, filetti al posto delle scatole,
+ * gerarchia tipografica serif/sans, una sola tinta d'accento.
+ * ========================================================================== */
 :root{
-  --bg:#0f1117; --bg2:#161922; --bg3:#1d212c; --line:#272c38;
-  --tx:#e6e8ee; --tx2:#9aa3b2; --tx3:#6b7280;
-  --amber:#f59e0b; --amber2:#fbbf24; --green:#34d399; --red:#f87171; --blue:#60a5fa;
-  --r:12px;
+  --bg:#fbf7f1; --bg2:#fffdfa; --bg3:#f2ede3; --line:#e4ddd0; --line2:#c9c0ae;
+  /* tx3 e usato per etichette a 10-12px: sta sopra 4.5:1 sulla carta */
+  --tx:#1b1813; --tx2:#57503f; --tx3:#726a5b;
+  --accent:#0d6e6e; --accent2:#0a5757; --accent-soft:rgba(13,110,110,.09);
+  --green:#4a7c59; --red:#b4553e;          /* salvia e terracotta, non semaforo */
+  --amber:#0d6e6e; --amber2:#0a5757;       /* alias storici = accento */
+  --r:10px;
+  --serif:'Instrument Serif',Georgia,'Times New Roman',serif;
+  --sans:'DM Sans',system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
 }
-html[data-theme="light"]{
-  --bg:#f5f7fa; --bg2:#ffffff; --bg3:#eef1f6; --line:#e3e7ee;
-  --tx:#1a1f29; --tx2:#586072; --tx3:#8b94a5;
-  --amber:#d97706; --amber2:#b45309; --green:#059669; --red:#dc2626; --blue:#2563eb;
+html[data-theme="dark"]{
+  --bg:#15130f; --bg2:#1c1a15; --bg3:#232019; --line:#332f26; --line2:#4a4536;
+  --tx:#efeae0; --tx2:#b3ab9a; --tx3:#9a927f;
+  --accent:#5cb8b8; --accent2:#7fd0d0; --accent-soft:rgba(92,184,184,.12);
+  --green:#7fb08c; --red:#dd9078;
+  --amber:#5cb8b8; --amber2:#7fd0d0;
 }
-html[data-theme="light"] body{background:var(--bg)}
-html[data-theme="light"] .kpi,html[data-theme="light"] .card{box-shadow:0 1px 3px rgba(16,24,40,.06)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--tx);font-family:'DM Sans',system-ui,sans-serif;line-height:1.5;font-size:14px;-webkit-text-size-adjust:100%}
-.mono{font-family:'JetBrains Mono',monospace}
-a{color:var(--amber);text-decoration:none}
-.wrap{max-width:1180px;margin:0 auto;padding:20px 18px 80px}
-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}
-
-/* focus visibile ovunque: navigazione da tastiera */
-:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:6px}
+body{background:var(--bg);color:var(--tx);font-family:var(--sans);line-height:1.55;font-size:14px;
+  -webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased}
+.mono{font-family:var(--mono)}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent-soft)}
+.wrap{max-width:1080px;margin:0 auto;padding:26px 22px 90px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.muted{color:var(--tx3)}
+.pos{color:var(--green)}.neg{color:var(--red)}
 
-/* tooltip (js/ui.js) — sostituisce quello nativo: appare subito e funziona al tap */
-.tip{position:absolute;z-index:100;background:var(--bg3);color:var(--tx);border:1px solid var(--line);
-  border-radius:9px;padding:8px 11px;font-size:12.5px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.28);
-  pointer-events:none;max-width:320px}
+/* ---- testata ------------------------------------------------------------- */
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;
+  padding-bottom:16px;border-bottom:2px solid var(--tx);margin-bottom:6px}
+.brand{display:flex;align-items:baseline;gap:12px}
+.logo{font-family:var(--serif);font-size:34px;line-height:1;color:var(--accent);font-style:italic}
+h1{font-family:var(--serif);font-size:31px;font-weight:400;letter-spacing:-.2px;line-height:1.05}
+.sub{color:var(--tx2);font-size:12px;margin-top:3px;letter-spacing:.1px}
+.masthead-r{display:flex;align-items:center;gap:12px;padding-bottom:3px}
+.dateline{font-size:11px;text-transform:uppercase;letter-spacing:1.1px;color:var(--tx3)}
+.icon-btn{background:none;border:1px solid var(--line);color:var(--tx2);border-radius:var(--r);
+  padding:6px 9px;font-size:13px;cursor:pointer;line-height:1;font-family:inherit}
+.icon-btn:hover{border-color:var(--line2);color:var(--tx)}
+
+/* ---- barra universi ------------------------------------------------------ */
+.toolbar{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  padding:11px 0;margin-bottom:26px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+@supports not (backdrop-filter:blur(1px)){.toolbar{background:var(--bg)}}
+.usel-group{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.usel-group>.muted{font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-right:2px}
+.uchip{background:none;border:1px solid var(--line);color:var(--tx2);border-radius:var(--r);
+  padding:6px 12px;font-size:12.5px;font-weight:500;cursor:pointer;user-select:none;
+  transition:border-color .13s,color .13s,background .13s}
+.uchip:hover{color:var(--tx);border-color:var(--line2)}
+.uchip.on{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+.uchip.on:hover{color:var(--bg)}
+.usep{width:1px;height:18px;background:var(--line);margin:0 4px}
+.upreset{background:none;border:none;color:var(--tx3);border-bottom:1px dashed var(--line2);
+  border-radius:0;padding:4px 2px;font-size:12px;cursor:pointer;font-family:inherit}
+.upreset:hover{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ---- avviso -------------------------------------------------------------- */
+.banner{border-left:3px solid var(--accent);padding:2px 0 2px 15px;margin-bottom:28px;
+  display:flex;gap:12px;align-items:flex-start;font-size:12.5px;color:var(--tx2);line-height:1.65}
+.banner b{color:var(--tx);font-weight:600}
+.banner .x{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:17px;line-height:1;
+  background:none;border:none;padding:0 2px;flex:none}
+.banner .x:hover{color:var(--tx)}
+.banner-mini{font-size:11.5px;color:var(--tx3);margin-bottom:24px;cursor:pointer;
+  background:none;border:none;font-family:inherit;border-bottom:1px dashed var(--line2);padding:0 0 2px}
+.banner-mini:hover{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ---- verdetto: il pull quote della pagina -------------------------------- */
+.verdict{padding:4px 0 26px;margin-bottom:30px;border-bottom:1px solid var(--line);display:flex;gap:18px;align-items:flex-start}
+.verdict .rule{width:3px;align-self:stretch;flex:none;border-radius:2px;background:var(--tx3)}
+.verdict.warn .rule{background:var(--accent)}
+.verdict.good .rule{background:var(--green)}
+.verdict.bad  .rule{background:var(--red)}
+.verdict .vk{font-size:10.5px;text-transform:uppercase;letter-spacing:1.3px;color:var(--tx3);margin-bottom:5px}
+.verdict .vt{font-family:var(--serif);font-size:33px;font-weight:400;line-height:1.12;letter-spacing:-.3px;margin-bottom:9px}
+.verdict.warn .vt{color:var(--tx)}
+.verdict.good .vt{color:var(--green)}
+.verdict.bad  .vt{color:var(--red)}
+.verdict .vd{font-size:13.5px;color:var(--tx2);line-height:1.7;max-width:72ch}
+.verdict .vd b{font-family:var(--mono);font-weight:500;font-size:12.5px;color:var(--tx)}
+.verdict .vd b.pos{color:var(--green)}.verdict .vd b.neg{color:var(--red)}
+
+/* ---- blocchi statistici (niente card: filetti e respiro) ----------------- */
+.kpi-group{margin-bottom:30px}
+.kpi-head{display:flex;align-items:baseline;gap:11px;flex-wrap:wrap;
+  padding-bottom:8px;border-bottom:1px solid var(--tx2);margin-bottom:2px}
+.kpi-head .t{font-size:10.5px;text-transform:uppercase;letter-spacing:1.3px;font-weight:700;color:var(--tx)}
+.kpi-head .h{font-size:11.5px;color:var(--tx3)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.kpi{padding:16px 20px 4px;border-right:1px solid var(--line)}
+.kpi:last-child{border-right:none}
+.kpi:first-child{padding-left:0}
+.kpi .lab{color:var(--tx3);font-size:10.5px;text-transform:uppercase;letter-spacing:1.1px;
+  margin-bottom:7px;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.kpi .val{font-family:var(--serif);font-size:38px;font-weight:400;line-height:1;
+  font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+.kpi .cmp{font-size:11.5px;color:var(--tx2);margin-top:7px;line-height:1.5}
+.kpi.quiet .val{font-size:27px;color:var(--tx2)}
+.kpi.quiet .lab,.kpi.quiet .cmp{color:var(--tx3)}
+.kpi-group.secondary .kpi-head{border-bottom-color:var(--line)}
+.info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;
+  border:1px solid var(--line2);color:var(--tx3);font-size:9px;font-weight:600;cursor:help;flex:none;
+  line-height:1;text-transform:none;letter-spacing:0;font-family:var(--serif);font-style:italic}
+.info:hover{color:var(--accent);border-color:var(--accent)}
+.kpi .lab .muted{text-transform:none;letter-spacing:.2px;font-family:var(--mono);font-size:10px}
+
+/* ---- sezioni ------------------------------------------------------------- */
+.sec{margin-bottom:38px}
+.sec>h2{font-family:var(--serif);font-size:23px;font-weight:400;letter-spacing:-.2px;
+  display:flex;align-items:baseline;gap:11px;flex-wrap:wrap;
+  padding-bottom:8px;border-bottom:1px solid var(--tx2);margin-bottom:11px}
+.sec .desc{color:var(--tx3);font-size:12.5px;margin-bottom:16px;max-width:76ch;line-height:1.65}
+.pill{font-size:11px;color:var(--tx3);font-family:var(--sans);letter-spacing:.2px;font-weight:400}
+.row{display:flex;gap:30px;flex-wrap:wrap}
+.col{flex:1;min-width:300px}
+
+/* ---- segmented control --------------------------------------------------- */
+.seg{display:inline-flex;gap:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{background:none;border:none;border-right:1px solid var(--line);color:var(--tx2);
+  padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:background .13s,color .13s}
+.seg button:last-child{border-right:none}
+.seg button:hover{background:var(--accent-soft);color:var(--tx)}
+.seg button.on{background:var(--accent);color:var(--bg);font-weight:600}
+.seg-wrap{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.seg-lab{font-size:10.5px;text-transform:uppercase;letter-spacing:1.1px;color:var(--tx3);font-weight:600}
+
+/* ---- tabelle: filetti, niente scatole ------------------------------------ */
+.tbl-scroll{overflow-x:auto;overflow-y:auto;max-height:min(72vh,640px)}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+th,td{text-align:right;padding:8px 11px;border-bottom:1px solid var(--line);white-space:nowrap}
+thead th{position:sticky;top:0;z-index:2;background:var(--bg);color:var(--tx2);font-weight:600;font-size:10px;
+  text-transform:uppercase;letter-spacing:1px;user-select:none;border-bottom:1px solid var(--tx2);padding-top:0}
+thead th[data-k]{cursor:pointer}
+thead th[data-k]:hover{color:var(--accent)}
+thead th[aria-sort]{color:var(--accent)}
+th:first-child,td:first-child{text-align:left;padding-left:0}
+th:last-child,td:last-child{padding-right:0}
+tbody tr:last-child td{border-bottom:none}
+td{font-variant-numeric:tabular-nums;color:var(--tx2)}
+td.tk{font-family:var(--mono);font-weight:500;font-size:12px;color:var(--tx);letter-spacing:-.2px}
+td b{color:var(--tx);font-weight:600}
+tbody tr:hover td{background:var(--accent-soft)}
+.wbar{display:inline-block;height:6px;border-radius:1px;background:var(--accent);vertical-align:middle;margin-right:7px;min-width:2px;opacity:.75}
+.spark{display:block}
+.spark path{fill:none;stroke:var(--tx3);stroke-width:1.2;stroke-linejoin:round;stroke-linecap:round}
+tbody tr:hover .spark path{stroke:var(--accent)}
+.empty{padding:34px 0;text-align:center;color:var(--tx3);font-size:13px;line-height:1.7}
+.empty b{display:block;font-family:var(--serif);font-weight:400;color:var(--tx);font-size:19px;margin-bottom:6px}
+
+/* ---- grafici ------------------------------------------------------------- */
+.chart-box{position:relative;height:290px}
+.chart-cap{font-size:11px;color:var(--tx3);margin-top:9px;padding-top:8px;border-top:1px solid var(--line);line-height:1.5}
+
+/* ---- controlli screening + istogrammi ------------------------------------ */
+.ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:20px 28px;margin-bottom:20px}
+.ctrl label{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--tx2);
+  align-items:baseline;margin-bottom:2px}
+.ctrl label b{color:var(--tx);font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;font-weight:500}
+.hist{display:block;width:100%;height:30px;margin-bottom:-4px}
+.hist .bar{fill:var(--line2);opacity:.55}
+.hist .bar.in{fill:var(--accent);opacity:.8}
+input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;height:18px;display:block}
+
+/* ---- imbuto dei filtri --------------------------------------------------- */
+.funnel{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;margin-bottom:18px;
+  padding:11px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:11.5px}
+.fstep{display:inline-flex;align-items:baseline;gap:6px;color:var(--tx3)}
+.fstep b{font-family:var(--mono);color:var(--tx2);font-size:12.5px;font-variant-numeric:tabular-nums;font-weight:500}
+.fstep.cut b{color:var(--red)}
+.fstep.keep b{color:var(--accent);font-weight:600;font-size:13.5px}
+.fstep.keep{color:var(--tx2)}
+.farrow{color:var(--line2);font-size:11px}
+
+/* ---- costruisci & salva -------------------------------------------------- */
+.btn{background:var(--accent);color:var(--bg);border:none;border-radius:var(--r);padding:8px 15px;
+  font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{background:var(--accent2)}
+.btn.ghost{background:none;color:var(--tx2);border:1px solid var(--line)}
+.btn.ghost:hover{background:none;border-color:var(--line2);color:var(--tx)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:var(--r);
+  padding:4px 9px 4px 11px;font-size:11.5px;font-family:var(--mono);margin:0 6px 6px 0}
+.chip b{cursor:pointer;color:var(--tx3);font-size:13px;line-height:1}
+.chip b:hover{color:var(--red)}
+.star{cursor:pointer;color:var(--line2);user-select:none;font-size:14px}
+.star:hover{color:var(--accent)}
+.star.on{color:var(--accent)}
+.build-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:18px 0}
+.build-actions input{background:none;border:none;border-bottom:1px solid var(--line);border-radius:0;
+  padding:8px 2px;color:var(--tx);font-size:13px;min-width:200px;flex:1;font-family:inherit}
+.build-actions input:focus{outline:none;border-bottom-color:var(--accent)}
+.snap{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--tx3)}
+.snap .ld{cursor:pointer;color:var(--accent);font-weight:500}
+.snap .del{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:14px}
+.snap .del:hover{color:var(--red)}
+.sublab{font-size:10.5px;text-transform:uppercase;letter-spacing:1.1px;color:var(--tx3);
+  margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+
+/* ---- tooltip (js/ui.js) -------------------------------------------------- */
+.tip{position:absolute;z-index:100;background:var(--tx);color:var(--bg);border-radius:7px;
+  padding:8px 11px;font-size:12px;line-height:1.5;box-shadow:0 6px 22px rgba(27,24,19,.22);
+  pointer-events:none;max-width:320px;font-family:var(--sans)}
 .tip[hidden]{display:none}
 
-/* skeleton di caricamento */
+/* ---- skeleton ------------------------------------------------------------ */
 .skel{background:linear-gradient(90deg,var(--bg3) 25%,var(--line) 37%,var(--bg3) 63%);
-  background-size:400% 100%;animation:shim 1.3s ease infinite;border-radius:5px}
+  background-size:400% 100%;animation:shim 1.3s ease infinite;border-radius:3px}
 @keyframes shim{0%{background-position:100% 50%}100%{background-position:0 50%}}
-.skel-lab{height:9px;width:52%;margin-bottom:10px}
-.skel-val{height:22px;width:70%;margin-bottom:8px}
-.skel-cmp{height:9px;width:84%}
-.skel-cell{height:11px;width:100%}
+.skel-lab{height:8px;width:52%;margin-bottom:12px}
+.skel-val{height:26px;width:70%;margin-bottom:10px}
+.skel-cmp{height:8px;width:84%}
+.skel-cell{height:10px;width:100%}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-.brand{display:flex;align-items:center;gap:12px}
-.logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--amber),#b45309);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;color:#1a1205}
-h1{font-size:19px;font-weight:700;letter-spacing:-.3px}
-.sub{color:var(--tx2);font-size:12px}
-select,button,input{font-family:inherit}
-.usel{background:var(--bg3);color:var(--tx);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer}
-.usel-group{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
-.uchip{background:var(--bg3);border:1px solid var(--line);color:var(--tx2);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;user-select:none;transition:background .12s,color .12s,border-color .12s}
-.uchip:hover{color:var(--tx);border-color:var(--tx3)}
-.uchip.on{background:var(--amber);color:#1a1205;border-color:var(--amber)}
-.uchip.on:hover{color:#1a1205}
-.usep{width:1px;height:22px;background:var(--line);margin:0 2px}
-.upreset{background:none;border:1px dashed var(--line);color:var(--tx3);border-radius:9px;padding:7px 11px;font-size:12px;cursor:pointer}
-.upreset:hover{color:var(--tx2);border-color:var(--tx3)}
 
-/* barra universi: resta a portata di mano mentre si scorre */
-.toolbar{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 88%,transparent);
-  backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:var(--r);
-  padding:11px 14px;margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-@supports not (backdrop-filter:blur(1px)){.toolbar{background:var(--bg2)}}
-.toolbar .tb-lab{color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+/* ---- piede --------------------------------------------------------------- */
+.foot{text-align:left;color:var(--tx3);font-size:11px;margin-top:46px;padding-top:16px;
+  border-top:1px solid var(--line);line-height:1.9}
 
-.banner{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:var(--r);padding:12px 14px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:var(--tx2)}
-.banner b{color:var(--amber2)}
-.banner .x{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:18px;line-height:1;padding:0 4px;background:none;border:none}
-.banner-mini{font-size:11.5px;color:var(--tx3);margin-bottom:16px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;background:none;border:none;font-family:inherit}
-.banner-mini:hover{color:var(--amber2)}
-
-/* verdetto: la risposta prima dei numeri che la giustificano */
-.verdict{display:flex;gap:14px;align-items:flex-start;border-radius:var(--r);padding:16px 18px;margin-bottom:16px;border:1px solid}
-.verdict .vi{font-size:26px;line-height:1.1}
-.verdict .vt{font-size:17px;font-weight:700;letter-spacing:-.2px;margin-bottom:3px}
-.verdict .vd{font-size:12.5px;color:var(--tx2);line-height:1.55}
-.verdict .vd b{font-family:'JetBrains Mono',monospace;font-weight:600}
-.verdict.warn{background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.35)}
-.verdict.warn .vt{color:var(--amber2)}
-.verdict.good{background:rgba(52,211,153,.07);border-color:rgba(52,211,153,.35)}
-.verdict.good .vt{color:var(--green)}
-.verdict.bad{background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.35)}
-.verdict.bad .vt{color:var(--red)}
-.verdict.idle{background:var(--bg2);border-color:var(--line)}
-.verdict.idle .vt{color:var(--tx2)}
-
-.kpi-group{margin-bottom:16px}
-.kpi-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.kpi-head .t{font-size:11px;text-transform:uppercase;letter-spacing:.6px;font-weight:700;color:var(--tx2)}
-.kpi-head .h{font-size:11.5px;color:var(--tx3)}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
-.kpi{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:14px}
-.kpi.hero{border-color:rgba(245,158,11,.35);box-shadow:inset 3px 0 0 var(--amber)}
-.kpi.quiet{background:transparent;border-style:dashed}
-.kpi.quiet .val{font-size:19px;color:var(--tx2)}
-.kpi .lab{color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px}
-.kpi .val{font-size:24px;font-weight:700;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
-.kpi .cmp{font-size:11.5px;color:var(--tx2);margin-top:3px}
-.info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;
-  border:1px solid var(--tx3);color:var(--tx3);font-size:9px;font-weight:700;cursor:help;flex:none;line-height:1;
-  text-transform:none;letter-spacing:0;font-family:'DM Sans',sans-serif}
-.info:hover{color:var(--amber2);border-color:var(--amber2)}
-/* dentro le etichette maiuscole i simboli devono restare com'erano (β, non Β) */
-.kpi .lab .muted{text-transform:none;letter-spacing:.2px;font-family:'JetBrains Mono',monospace;font-size:10.5px}
-.card{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:18px}
-.card h2{font-size:15px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.card .desc{color:var(--tx3);font-size:12px;margin-bottom:14px;max-width:78ch}
-.row{display:flex;gap:18px;flex-wrap:wrap}
-.col{flex:1;min-width:300px}
-.seg{display:inline-flex;background:var(--bg3);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px}
-.seg button{background:none;border:none;color:var(--tx2);padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:background .12s,color .12s}
-.seg button:hover{color:var(--tx)}
-.seg button.on{background:var(--amber);color:#1a1205}
-.seg-wrap{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.seg-lab{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--tx3);font-weight:600}
-
-.tbl-scroll{overflow-x:auto;overflow-y:auto;max-height:min(70vh,620px);border-radius:9px;border:1px solid var(--line)}
-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
-th,td{text-align:right;padding:8px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
-thead th{position:sticky;top:0;z-index:2;background:var(--bg3);color:var(--tx3);font-weight:600;font-size:11px;
-  text-transform:uppercase;letter-spacing:.4px;user-select:none}
-thead th[data-k]{cursor:pointer}
-thead th[data-k]:hover{color:var(--tx)}
-thead th[aria-sort]{color:var(--amber2)}
-th:first-child,td:first-child{text-align:left}
-tbody tr:last-child td{border-bottom:none}
-td{font-variant-numeric:tabular-nums}
-td.tk{font-weight:600;font-family:'JetBrains Mono',monospace}
-tbody tr:hover td{background:color-mix(in srgb,var(--amber) 6%,transparent)}
-.wbar{display:inline-block;height:7px;border-radius:4px;background:var(--amber);vertical-align:middle;margin-right:6px;min-width:2px}
-.pos{color:var(--green)}.neg{color:var(--red)}
-.empty{padding:26px 14px;text-align:center;color:var(--tx3);font-size:13px}
-.empty b{display:block;color:var(--tx2);font-size:14px;margin-bottom:4px}
-
-.chart-box{position:relative;height:300px}
-.chart-cap{font-size:11.5px;color:var(--tx3);margin-top:6px;text-align:center}
-.ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px 22px;margin-bottom:14px}
-.ctrl label{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--tx2);margin-bottom:6px;align-items:center}
-.ctrl label b{color:var(--amber2);font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
-input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer;height:20px}
-
-/* imbuto dei filtri: mostra a colpo d'occhio quale soglia sta scartando i titoli */
-.funnel{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
-.fstep{display:inline-flex;align-items:baseline;gap:5px;background:var(--bg3);border:1px solid var(--line);
-  border-radius:8px;padding:5px 9px;font-size:11.5px;color:var(--tx3)}
-.fstep b{font-family:'JetBrains Mono',monospace;color:var(--tx2);font-size:12.5px;font-variant-numeric:tabular-nums}
-.fstep.cut b{color:var(--red)}
-.fstep.keep{border-color:rgba(245,158,11,.4)}
-.fstep.keep b{color:var(--amber2)}
-.farrow{color:var(--tx3);font-size:11px}
-.pill{display:inline-block;background:var(--bg3);border:1px solid var(--line);border-radius:20px;padding:3px 10px;font-size:11.5px;color:var(--tx2);margin-right:6px}
-.muted{color:var(--tx3)}
-.btn{background:var(--amber);color:#1a1205;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
-.btn.ghost{background:var(--bg3);color:var(--tx);border:1px solid var(--line)}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.chip{display:inline-flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--line);border-radius:20px;padding:4px 9px 4px 11px;font-size:12px;font-family:'JetBrains Mono',monospace;margin:0 6px 6px 0}
-.chip b{cursor:pointer;color:var(--tx3);font-size:14px;line-height:1}
-.star{cursor:pointer;color:var(--tx3);user-select:none;font-size:15px}
-.star.on{color:var(--amber)}
-.build-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0}
-.build-actions input{background:var(--bg3);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--tx);font-size:13px;min-width:200px;flex:1}
-.snap{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--tx2)}
-.snap .ld{cursor:pointer;color:var(--amber)}
-.snap .del{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:16px}
-.foot{text-align:center;color:var(--tx3);font-size:11px;margin-top:30px;line-height:1.8}
 @media(max-width:760px){
-  .wrap{padding:14px 12px 60px}
-  .card{padding:14px}
-  .chart-box{height:230px}
-  .kpis{grid-template-columns:repeat(2,1fr);gap:9px}
-  .kpi{padding:11px}
-  .kpi .val{font-size:19px}
-  .kpi.quiet .val{font-size:16px}
-  .verdict{padding:13px 14px;gap:11px}
-  .verdict .vi{font-size:21px}
-  .verdict .vt{font-size:15px}
-  .toolbar{padding:9px 11px}
-  .tbl-scroll{max-height:60vh}
-  th,td{padding:7px 7px;font-size:12px}
+  .wrap{padding:18px 16px 60px}
+  h1{font-size:25px}.logo{font-size:28px}
+  .verdict .vt{font-size:25px}
+  .verdict{gap:13px;padding-bottom:20px;margin-bottom:24px}
+  .sec>h2{font-size:20px}
+  .sec{margin-bottom:30px}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .kpi{padding:13px 13px 4px}
+  .kpi:nth-child(2n){border-right:none}
+  .kpi:nth-child(2n+1){padding-left:0}
+  .kpi .val{font-size:29px}
+  .kpi.quiet .val{font-size:22px}
+  .chart-box{height:225px}
+  .tbl-scroll{max-height:62vh}
+  th,td{padding:7px 8px;font-size:12px}
+  .row{gap:22px}
 }
-@media(max-width:359px){.kpis{grid-template-columns:1fr}}
+@media(max-width:359px){.kpis{grid-template-columns:1fr}.kpi{border-right:none;padding-left:0}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div class="brand">
-      <div class="logo">C</div>
+      <div class="logo" aria-hidden="true">C</div>
       <div>
         <h1>Coma Screener</h1>
-        <div class="sub">Aziende da coma — buy &amp; hold di lungo periodo · <span id="updated" class="muted">…</span></div>
+        <div class="sub">Compounder di lungo periodo, validati out-of-sample</div>
       </div>
     </div>
-    <button id="theme-toggle" class="usel" title="Cambia tema chiaro / scuro" aria-label="Cambia tema">🌙</button>
+    <div class="masthead-r">
+      <span class="dateline" id="updated">…</span>
+      <button id="theme-toggle" class="icon-btn" title="Cambia tema chiaro / scuro" aria-label="Cambia tema">◐</button>
+    </div>
   </header>
 
   <div class="toolbar">
@@ -212,11 +285,10 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer;height:20p
   </div>
 
   <div class="banner" id="caveat">
-    <span aria-hidden="true">⚠️</span>
-    <div><b>Leggi prima di fidarti dei numeri.</b> Lo screening usa i titoli <b>oggi</b> nell'indice: per costruzione seleziona solo i <b>sopravvissuti</b> (survivorship bias), e il bias resta <b>anche nell'out-of-sample</b>, perché quell'elenco nel passato non era conoscibile. Il backtest <b>in-sample</b> è ottimistico e circolare. Guarda l'<b>alfa out-of-sample e il suo t-stat</b>: un CAGR alto con beta basso non è bravura, e con <b>t sotto 2 l'alfa è indistinguibile dal caso</b>. Non è una raccomandazione d'investimento.</div>
+    <div>Lo screening usa i titoli <b>oggi</b> nell'indice: per costruzione seleziona solo i <b>sopravvissuti</b>, e il bias resta <b>anche nell'out-of-sample</b>, perché quell'elenco nel passato non era conoscibile. Il backtest <b>in-sample</b> è ottimistico e circolare. Guarda l'<b>alfa out-of-sample e il suo t-stat</b>: un CAGR alto con beta basso non è bravura, e con <b>t sotto 2 l'alfa è indistinguibile dal caso</b>. Non è una raccomandazione d'investimento.</div>
     <button class="x" id="caveat-hide" aria-label="Nascondi l'avviso metodologico">×</button>
   </div>
-  <button class="banner-mini" id="caveat-show" hidden>⚠️ Mostra l'avviso metodologico</button>
+  <button class="banner-mini" id="caveat-show" hidden>Mostra l'avviso metodologico</button>
 
   <div id="verdict"></div>
 
@@ -228,7 +300,7 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer;height:20p
     <div class="kpis" id="kpis"></div>
   </div>
 
-  <div class="kpi-group">
+  <div class="kpi-group secondary">
     <div class="kpi-head">
       <span class="t">Riferimento in-sample</span>
       <span class="h">ottimistico e circolare: selezione e test sullo stesso periodo <span class="info" title="In-sample significa che i titoli sono stati scelti sapendo già come sarebbero andati. Serve solo come limite superiore teorico, mai come previsione.">i</span></span>
@@ -236,10 +308,10 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer;height:20p
     <div class="kpis" id="kpis-is"></div>
   </div>
 
-  <div class="card">
-    <h2>📈 Backtest portafoglio <span class="pill" id="bench-name"></span></h2>
-    <div class="desc">Curva equity (base 100, scala log) e drawdown. Il benchmark si adatta agli universi selezionati ed è sempre <b>total return</b> (dividendi reinvestiti), come le serie dei titoli. Ribilanciamento annuale con 0.15% di costi sul controvalore scambiato.</div>
-    <div class="seg-wrap" style="margin-bottom:14px">
+  <section class="sec">
+    <h2>Backtest <span class="pill" id="bench-name"></span></h2>
+    <div class="desc">Il benchmark si adatta agli universi selezionati ed è sempre <b>total return</b> (dividendi reinvestiti), come le serie dei titoli. Ribilanciamento annuale con 0.15% di costi sul controvalore scambiato.</div>
+    <div class="seg-wrap" style="margin-bottom:20px">
       <span class="seg-lab">Periodo</span>
       <div class="seg" id="seg-period" role="group" aria-label="Periodo del backtest">
         <button data-v="oos" class="on" aria-pressed="true" title="Out-of-sample: selezione su dati passati (fino a ~7 anni fa) testata sul periodo successivo. Il risultato più onesto.">Out-of-sample</button>
@@ -260,45 +332,45 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer;height:20p
     <div class="row">
       <div class="col">
         <div class="chart-box"><canvas id="equity" aria-label="Curva di crescita del portafoglio contro il benchmark" role="img"></canvas></div>
-        <div class="chart-cap">Crescita di 100 € — scala logaritmica: pendenze uguali = rendimenti uguali</div>
+        <div class="chart-cap">Crescita di 100 € — scala logaritmica: pendenze uguali significano rendimenti uguali</div>
       </div>
       <div class="col">
         <div class="chart-box"><canvas id="drawdown" aria-label="Drawdown del portafoglio contro il benchmark" role="img"></canvas></div>
-        <div class="chart-cap">Distanza dal massimo precedente — quanto si è dovuto sopportare</div>
+        <div class="chart-cap">Distanza dal massimo precedente — quanto si è dovuto sopportare per arrivarci</div>
       </div>
     </div>
-  </div>
+  </section>
 
-  <div class="card">
-    <h2>🎯 Portafoglio <span class="pill" id="port-n"></span></h2>
-    <div class="desc">I titoli che superano tutte le soglie, ordinati per peso. I pesi seguono lo schema selezionato sopra (cap 20% / floor 2% per titolo).</div>
+  <section class="sec">
+    <h2>Portafoglio <span class="pill" id="port-n"></span></h2>
+    <div class="desc">I titoli che superano tutte le soglie, ordinati per peso. I pesi seguono lo schema selezionato sopra (cap 20% / floor 2% per titolo). La colonna <b>Curva</b> mostra l'andamento sulla finestra di test: è ciò che la metodologia chiama "regolarità".</div>
     <div class="tbl-scroll"><table id="port-tbl"></table></div>
-  </div>
+  </section>
 
-  <div class="card">
-    <h2>🔎 Screening interattivo <button class="upreset" id="btn-reset" style="margin-left:auto" title="Ripristina tutte le soglie ai valori di default">↺ Reset filtri</button></h2>
-    <div class="desc">Muovi le soglie: il filtro gira nel browser sulle metriche già calcolate, istantaneo. L'imbuto sotto mostra quale soglia sta effettivamente scartando i titoli.</div>
+  <section class="sec">
+    <h2>Screening <button class="upreset" id="btn-reset" style="margin-left:auto" title="Ripristina tutte le soglie ai valori di default">↺ Reset filtri</button></h2>
+    <div class="desc">Muovi le soglie: il filtro gira nel browser sulle metriche già calcolate, istantaneo. L'istogramma sopra ogni slider mostra come è distribuito l'universo e quanto stai tagliando; l'imbuto sotto dice quale soglia sta davvero decidendo il portafoglio.</div>
     <div class="ctrls" id="screen-ctrls"></div>
     <div id="screen-summary"></div>
     <div class="tbl-scroll"><table id="screen-tbl"></table></div>
-  </div>
+  </section>
 
-  <div class="card" id="build-card">
-    <h2>💾 Costruisci &amp; salva</h2>
+  <section class="sec" id="build-card">
+    <h2>Costruisci &amp; salva</h2>
     <div class="desc">Clicca ★ nella tabella screening per aggiungere titoli a un basket custom. Basket vuoto = usa il portafoglio canonico corrente. I pesi seguono lo schema selezionato sopra.</div>
     <div id="basket-chips"></div>
-    <div id="basket-metrics" class="kpis" style="margin:14px 0 0" aria-live="polite"></div>
+    <div id="basket-metrics" class="kpis" style="margin:16px 0 0" aria-live="polite"></div>
     <div class="build-actions">
       <input id="snap-note" placeholder="Nota (opzionale) — es. revisione giugno">
-      <button class="btn" id="btn-save">💾 Salva snapshot</button>
-      <button class="btn ghost" id="btn-export">📊 Esporta Excel</button>
+      <button class="btn" id="btn-save">Salva snapshot</button>
+      <button class="btn ghost" id="btn-export">Esporta Excel</button>
       <span id="save-status" class="muted"></span>
     </div>
-    <div style="margin-top:6px">
-      <div class="lab" style="color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Snapshot salvati</div>
+    <div style="margin-top:14px">
+      <div class="sublab">Snapshot salvati</div>
       <div id="snapshots" class="muted">…</div>
     </div>
-  </div>
+  </section>
 
   <div class="foot">coma-screener <b>v1.5.0</b> · dati Yahoo Finance, total return in EUR · metodologia "Aziende da Coma" (M. Rea) · uso personale<br>
     Benchmark total return · ribilanciamento annuale con costi 0.15% · risk-free €STR · alfa, beta e t-stat sulla regressione col benchmark<br>
