@@ -644,7 +644,17 @@
     });
   }
 
-  function renderAll() { renderKpis(); renderBacktest(); renderPortfolio(); renderScreenTable(); renderBasket(); }
+  /** Il link alla pagina 2 porta con se i titoli attualmente selezionati. */
+  function updateEntryLink() {
+    const a = $('#link-entry');
+    if (!a) return;
+    const ab = state.build || (state.merged ? activeBuild() : null);
+    const picks = ab && ab.res && ab.res.picks ? ab.res.picks.map((x) => x.t) : [];
+    a.href = 'entry.html?u=' + encodeURIComponent(state.universes[0] || 'SP500') +
+      (picks.length ? '&t=' + encodeURIComponent(picks.join(',')) : '');
+  }
+
+  function renderAll() { renderKpis(); renderBacktest(); renderPortfolio(); renderScreenTable(); renderBasket(); updateEntryLink(); }
 
   function bindSeg(id, key, after) {
     $(id).addEventListener('click', (e) => {

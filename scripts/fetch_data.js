@@ -13,6 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const E = require('./engine');
+const X = require('./entry');
 const { fetchSeries, fetchMany } = require('./yahoo');
 
 const PPY = 252;
@@ -287,6 +288,68 @@ function coveringWindow(picks, eurW, from) {
   return picks.filter((t) => eurW[t] && eurW[t].ts[0] <= from + 15 * 86400);
 }
 
+// ---- analisi ingressi (pagina 2) -------------------------------------------
+/**
+ * Statistiche di drawdown e di strategia d'ingresso per ogni titolo eleggibile,
+ * calcolate sui dati GIORNALIERI (le curve spedite al browser sono mensili:
+ * troppo grossolane per i trigger sui ribassi). Il browser poi le aggrega sul
+ * portafoglio che l'utente ha selezionato.
+ *
+ * La simulazione gira su serie settimanali: a soglie del 10-20% il segnale non
+ * cambia, e costa cinque volte meno.
+ */
+function entryStatsFor(tickers, eur, rfSer, from) {
+  const out = {};
+  const rd = (v, d) => (isFinite(v) && v !== null ? +v.toFixed(d) : null);
+  for (const t of tickers) {
+    const s = eur[t];
+    if (!s) continue;
+    const i0 = from ? s.ts.findIndex((d) => d >= from) : 0;
+    if (i0 < 0) continue;
+    const px = s.px.slice(i0), ts = s.ts.slice(i0);
+    if (px.length < 6 * PPY) continue;
+
+    const prof = X.drawdownProfile(px, PPY);
+    const ddSig = X.runningDrawdown(px);
+    const zSig = X.expandingResidZ(px, Math.round(PPY / 2));
+    const cond = {};
+    for (const h of [1, 3]) {
+      const byDd = X.conditionalForward(px, ddSig, X.DD_BUCKETS, h, PPY);
+      const byZ = X.conditionalForward(px, zSig, X.Z_BUCKETS, h, PPY);
+      if (byDd) cond['dd' + h] = byDd;
+      if (byZ) cond['z' + h] = byZ;
+    }
+    // simulazione su serie settimanale + risk-free allineato
+    const step = 5;
+    const wPx = [], wTs = [];
+    for (let i = 0; i < px.length; i += step) { wPx.push(px[i]); wTs.push(ts[i]); }
+    const wRf = rfReturnsFor(wTs, rfSer, PPY / step);
+    const cmpOpt = { ppy: PPY / step, minYears: 5, startStep: Math.round(PPY / step / 4) };
+    const lump = X.compareEntries(wPx, wRf, { ...cmpOpt, schedule: 'lump' });
+    const pac = X.compareEntries(wPx, wRf, { ...cmpOpt, schedule: 'quarterly' });
+
+    const slimCond = (c) => c && ({ h: c.horizonYears,
+      u: c.uncond ? { n: c.uncond.n, med: rd(c.uncond.med, 4) } : null,
+      b: c.buckets.map((b) => ({ l: b.label, n: b.n, med: rd(b.med, 4), p10: rd(b.p10, 4), neg: rd(b.pNeg, 3) })) });
+    const slimCmp = (c) => c && ({ starts: c.starts, r: c.results.map((r) => ({
+      id: r.id, med: rd(r.medRel, 4), p10: rd(r.p10Rel, 4), p90: rd(r.p90Rel, 4),
+      win: rd(r.winRate, 3), tim: rd(r.timeInMarket, 3), nf: rd(r.neverFired, 3) })) });
+
+    out[t] = {
+      years: rd(prof.years, 1), episodes: prof.episodes,
+      medDepth: rd(prof.medDepth, 4), p90Depth: rd(prof.p90Depth, 4), maxDepth: rd(prof.maxDepth, 4),
+      medFall: rd(prof.medFall, 2), medRecovery: rd(prof.medRecovery, 2), p90Recovery: rd(prof.p90Recovery, 2),
+      pctUnderwater: rd(prof.pctUnderwater, 3), pctBelow10: rd(prof.pctBelow10, 3), pctBelow20: rd(prof.pctBelow20, 3),
+      openDD: rd(prof.openEpisode, 4), zNow: rd(zSig[zSig.length - 1], 2), ddNow: rd(ddSig[ddSig.length - 1], 4),
+      freq: Object.fromEntries(Object.entries(prof.freq).map(([k, v]) => [k,
+        { n: v.episodes, per: rd(v.perYear, 3), gap: rd(v.yearsBetween, 2), rec: rd(v.medRecovery, 2) }])),
+      cond: Object.fromEntries(Object.entries(cond).map(([k, v]) => [k, slimCond(v)])),
+      lump: slimCmp(lump), pac: slimCmp(pac),
+    };
+  }
+  return out;
+}
+
 // ---- main ------------------------------------------------------------------
 async function run(uname) {
   const universe = JSON.parse(fs.readFileSync(path.join(__dirname, 'universe.json'), 'utf8')).universes;
@@ -429,6 +492,17 @@ async function run(uname) {
       r2: rd(r.r2, 4), reg: rd(r.reg, 4), mar: rd(r.mar, 3), sortino: rd(r.sortino, 3),
       sharpe: rd(r.sharpe, 3), score: rd(r.score, 3), quality: rd(r.quality, 4) }; }) };
   portfolioOut.updated = new Date().toISOString();
+
+  // analisi ingressi: su TUTTA la storia disponibile, non sulla finestra a 15
+  // anni del backtest. La finestra fissa parte dal 2011 e si perderebbe il 2008,
+  // cioe l'unico vero stress test presente nel campione.
+  const t0 = Date.now();
+  const entryOut = { updated: new Date().toISOString(), base: 'EUR', universe: uname,
+    note: 'storia piena; simulazione settimanale; liquidita remunerata al risk-free',
+    strategies: X.defaultStrategies().map((s) => ({ id: s.id, label: s.label })),
+    tickers: entryStatsFor(eligible, eur, rfSer, 0) };
+  fs.writeFileSync(path.join(DATA_DIR, `entry_${uname}.json`), JSON.stringify(entryOut));
+  log(`Analisi ingressi: ${Object.keys(entryOut.tickers).length} titoli in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
 
   fs.writeFileSync(path.join(DATA_DIR, `metrics_${uname}.json`), JSON.stringify(metricsOut));
   fs.writeFileSync(path.join(DATA_DIR, `curves_${uname}.json`), JSON.stringify(curvesOut));

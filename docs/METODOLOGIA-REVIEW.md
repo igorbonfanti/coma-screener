@@ -470,7 +470,157 @@ più lunga disponibile da questa fonte). Due conseguenze non banali:
 
 ---
 
-## 7. Nota finale
+## 7. Quando entrare: ribassi, PAC o rottura dei massimi
+
+_Aggiunto il 2026-08-08 (v1.6.0). Pagina `entry.html`, motore `scripts/entry.js`._
+
+La domanda: dato un portafoglio di compounder, conviene comprarlo subito, accumularlo con un
+PAC, aspettarlo sui ribassi, o entrare sulla forza alla rottura dei massimi?
+
+### 7.1 Come è impostato il confronto
+
+Due regole senza le quali il risultato non significa niente:
+
+- **Equivalenza di capitale.** Tutte le strategie condividono lo stesso schema di versamenti e
+  la liquidità in attesa è remunerata al risk-free (€STR). Confrontare il rendimento del solo
+  capitale investito farebbe vincere per finta chi resta liquido.
+- **Nessun look-ahead nei segnali.** Massimo corrente, massimo a N mesi e residuo dal trend
+  log-lineare sono calcolati su **finestra espansiva**: al tempo *t* usano solo [0..*t*]. Un
+  trend stimato su tutto il campione conosce il futuro, e renderebbe "compra sotto la retta"
+  magicamente profittevole. Il test `_test_entry.js` verifica esplicitamente questa invarianza.
+
+Ogni confronto è ripetuto su **tutte le date di partenza** (trimestrali, orizzonte minimo 5
+anni), non su una sola: il risultato utile non è "ha reso il 9.4%" ma "ha battuto l'alternativa
+nel 43% delle partenze".
+
+Le statistiche usano **tutta la storia disponibile**, non la finestra a 15 anni del backtest:
+quella parte dal 2011 e si perderebbe il 2008, cioè l'unico vero stress test nel campione.
+
+**Sul POC volumetrico.** Il point of control è un concetto di breve periodo e non regge il
+trasporto su 15 anni. Verificato sui dati: il POC a 15 anni sta a −188% dal prezzo per MCD,
+−584% per V, −508% per COST — un segnale "compra in area POC" non scatterebbe mai. Un
+compounder passa la maggior parte del tempo ai prezzi bassi del proprio passato, e a parità di
+controvalore lì scambia più azioni. L'adattamento implementato è la **zona di valore sui
+residui dal trend log**: scala-invariante, non richiede volumi, e misura esattamente ciò che la
+selezione premia. (Il POC rolling a 12 mesi resta praticabile — sta a ±11% dal prezzo — ma
+richiede di conservare i volumi e correggerli per gli split.)
+
+### 7.2 Anatomia dei ribassi (S&P 500, portafoglio OOS, storia piena)
+
+| | Compounder OOS | Universo eleggibile |
+|---|---|---|
+| Profondità mediana di un ribasso | 9% | 10% |
+| Profondità p90 | 23% | 30% |
+| Drawdown massimo | 48% | 62% |
+| Tempo passato sotto il massimo precedente | 86% | 89% |
+| Tempo passato sotto −10% | 35% | 53% |
+| Tempo passato sotto −20% | 12% | 30% |
+| Recupero mediano dal minimo | 0.1 anni | 0.1 anni |
+
+Due letture. La prima: **la selezione funziona sul rischio**, non sul rendimento — i compounder
+stanno sotto −20% per il 12% del tempo contro il 30% dell'universo. La seconda, meno comoda:
+**anche un compounder è sotto il proprio massimo per l'86% del tempo**. Il buy & hold non è
+un'esperienza confortevole nemmeno sui titoli più regolari che esistono.
+
+Quanto spesso arriva lo sconto:
+
+| Sconto | Anni medi di attesa (compounder) | (universo) |
+|---|---|---|
+| −10% | 1.2 | 1.2 |
+| −15% | 2.3 | 2.1 |
+| −20% | **3.8** | 3.2 |
+| −30% | **8.8** | 6.1 |
+
+Aspettare un ribasso del 30% su un compounder significa, in media, aspettare quasi nove anni.
+
+### 7.3 Il ribasso è un buon momento — ma aspettarlo no
+
+Rendimento annuo dei tre anni successivi all'acquisto, per stato in cui si compra:
+
+| Stato all'acquisto | Compounder OOS | Universo |
+|---|---|---|
+| ai massimi (0 a −5%) | 16% | 14% |
+| −5% a −10% | 16% | 14% |
+| −10% a −20% | 16% | 14% |
+| −20% a −30% | **20%** | 16% |
+| oltre −30% | **23%** | 23% |
+| *incondizionato* | *16%* | *15%* |
+
+Comprare in ribasso profondo **rende di più**: +4/+7 punti annui rispetto all'incondizionato.
+Sembra la prova che la strategia funzioni. Non lo è.
+
+Ricchezza finale rispetto a comprare subito, capitale unico, mediana su tutte le partenze:
+
+| Strategia | Ricchezza vs subito | Batte subito | Capitale investito | Universo (controllo) |
+|---|---|---|---|---|
+| **Subito** | — | — | 100% | — |
+| Ribasso −10% | −3.0% | 43% | 93% | −0.5% · 49% |
+| Ribasso −20% | −18.1% | 30% | 77% | −6.2% · 44% |
+| Ribasso −30% | −56.2% | 19% | 48% | −16.2% · 38% |
+| Sotto il trend (z ≤ 0) | −7.6% | 25% | 95% | −8.3% · 30% |
+| Molto sotto il trend (z ≤ −1) | −10.4% | 24% | 93% | −10.1% · 29% |
+| Rottura massimi 12m | −18.1% | **7%** | 89% | −19.1% · 15% |
+
+**Nessuna strategia d'attesa batte l'acquisto immediato nella maggioranza delle partenze.**
+Il caso peggiore è comprare sulla forza: la rottura dei massimi a 12 mesi vince solo nel 7% dei
+casi, perché su una serie che tende a salire il segnale ti fa entrare *dopo* il rialzo.
+
+La riconciliazione fra le due tabelle è il risultato più interessante del capitolo: **il ribasso,
+quando arriva, è un ottimo momento per comprare; aspettarlo costa più di quanto renda.** Il
+motivo è nella §7.2 — lo sconto del 20% arriva una volta ogni 3.8 anni, e nel frattempo il
+titolo è salito più di quanto lo sconto restituisca.
+
+### 7.4 Il controllo survivorship, e perché stavolta rafforza la conclusione
+
+Era il rischio principale: su un universo selezionato perché non ha mai avuto un quinquennio
+negativo, ogni ribasso è stato recuperato per costruzione, e "comprare i ribassi funziona"
+sarebbe stato un artefatto garantito.
+
+I dati dicono il contrario. Sull'universo non filtrato la penalità dell'attesa è **minore**
+(−0.5% / −6.2% / −16.2% contro −3.0% / −18.1% / −56.2%). Cioè: aspettare il ribasso è ancora
+peggio sui compounder che sul mercato in generale — perché scendono meno spesso, meno a fondo,
+e recuperano prima. **La conclusione non è un effetto della selezione: la selezione la
+rafforza.**
+
+### 7.4-bis Tiene su tutti gli universi
+
+Stessa tabella, capitale unico, portafoglio OOS, ricchezza rispetto a comprare subito e
+percentuale di partenze vinte:
+
+| Universo | Titoli | Ribasso −10% | Ribasso −20% | Sotto il trend | Rottura massimi |
+|---|---|---|---|---|---|
+| S&P 500 | 20 | −3.0% · 43% | −18.1% · 30% | −7.6% · 25% | −18.1% · **7%** |
+| NYSE | 20 | −2.1% · 45% | −17.2% · 30% | −7.8% · 26% | −18.3% · **7%** |
+| NASDAQ | 14 | −3.0% · 44% | −14.3% · 35% | −7.7% · 27% | −18.7% · **8%** |
+| STOXX 600 | 5 | −2.6% · 45% | −11.2% · 34% | −6.9% · 26% | −16.5% · **6%** |
+
+L'ordinamento delle strategie e l'ordine di grandezza delle penalità non cambiano mai. Gli
+universi USA si sovrappongono parzialmente, quindi non sono quattro prove indipendenti, ma
+l'Europa è un campione separato e dà lo stesso risultato. Sull'attesa dello sconto del 20% i
+compounder fanno aspettare fra 3.0 e 3.8 anni ovunque.
+
+### 7.5 Il PAC attenua tutto
+
+Con versamenti trimestrali invece che con un capitale unico, le differenze si comprimono:
+ribasso −10% passa da −3.0% a −2.8%, ribasso −20% da −18.1% a −16.6%, la zona di valore a circa
+−2%. È coerente: con un PAC stai già distribuendo l'ingresso nel tempo, e la sovrastruttura di
+timing ha meno spazio per fare danni. Chi versa periodicamente ha poco da guadagnare a
+complicarsi la vita con un segnale — e poco da perdere.
+
+### 7.6 Cosa manca ancora qui
+
+- **Intervalli di confidenza sui win rate.** `bootstrapCI()` è implementata e testata ma non
+  ancora esposta in pagina: le partenze sono fortemente sovrapposte, quindi un 43% va letto con
+  una banda, non come un punto.
+- **Un solo regime di mercato.** Il campione utile parte dal 2003 (limite del cambio EUR/USD su
+  Yahoo, §6): tassi in discesa fino al 2021 e un solo grande crollo. Su un campione che
+  includesse il 1970-2000 la conclusione potrebbe cambiare.
+- **Le imposte**, che penalizzano ulteriormente chi movimenta.
+- **POC volumetrico rolling**, se si vuole la versione fedele all'idea originale.
+
+---
+
+## 8. Nota finale
 
 Il codice è pulito, il motore isomorfo è un'ottima scelta architetturale, e il fatto che tu
 abbia già costruito un OOS e scritto i caveat nel README ti mette avanti al 90% dei progetti

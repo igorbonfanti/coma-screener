@@ -1,13 +1,15 @@
 /* Service worker coma-screener — app shell cache-first, dati network-first. */
-// v7: benchmark total return, alfa/beta/t-stat, nuova UI (+ js/ui.js).
+// v8: pagina "Come entrare" (entry.html) e CSS condiviso fra le due pagine.
 // Alzare SEMPRE la versione quando cambia un file in SHELL: la shell e'
 // cache-first, quindi senza un nome nuovo i client gia' installati
 // continuerebbero a vedere la versione precedente.
-const VERSION = 'coma-v7';
+const VERSION = 'coma-v8';
 const SHELL = [
-  './', './index.html', './manifest.json', './icon.svg',
-  './scripts/engine.js', './js/ui.js', './js/charts.js', './js/live.js',
-  './js/store.js', './js/export.js', './js/app.js',
+  './', './index.html', './entry.html', './manifest.json', './icon.svg',
+  './css/coma.css',
+  './scripts/engine.js', './scripts/entry.js',
+  './js/ui.js', './js/charts.js', './js/live.js',
+  './js/store.js', './js/export.js', './js/app.js', './js/entry-app.js',
   './auth-opzionale.js',
 ];
 

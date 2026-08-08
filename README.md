@@ -8,6 +8,13 @@ Screener azionario per individuare **compounder di lungo periodo** ("aziende da 
 
 **Benchmark total return, congruente alla selezione:** S&P 500→`^SP500TR` · NASDAQ→`^XCMP` · NYSE→`VTI` · STOXX→`EXSA.DE` · combo USA→`^SP500TR` · USA+Europa→`ACWI`. Sono tutti **total return** perché le serie dei titoli usano l'adjusted close: confrontarle con un indice price-only (`^GSPC`, `^IXIC`, `^STOXX`) regala **1–3 punti percentuali l'anno** alla strategia. Mostrato sempre a video. Passando il mouse su opzioni e intestazioni compaiono spiegazioni.
 
+## Due pagine
+
+1. **Screener** (`index.html`) — *quali* titoli. Filtri, portafoglio, pesi, backtest IS/OOS con alfa, beta e t-stat.
+2. **Come entrare** (`entry.html`) — *quando* comprarli. Anatomia dei drawdown, rendimento forward condizionato allo stato d'acquisto, e confronto fra strategie d'ingresso (subito · ribasso −10/−20/−30% · sotto il trend · rottura dei massimi) a parità di versamenti, con la liquidità in attesa remunerata al risk-free.
+
+Risultato in sintesi: **il ribasso è un buon momento per comprare, ma aspettarlo costa più di quanto renda** — e vale ancora di più sui compounder che sul mercato in generale. Dettagli e numeri: [`docs/METODOLOGIA-REVIEW.md`](docs/METODOLOGIA-REVIEW.md) §7.
+
 ## Come funziona
 
 Un solo **motore isomorfo** (`scripts/engine.js`, JS puro senza dipendenze) gira sia nella GitHub Action (calcolo pesante) sia nel browser (re-filtri e pesatura live).
@@ -43,7 +50,9 @@ roadmap dei miglioramenti: [`docs/METODOLOGIA-REVIEW.md`](docs/METODOLOGIA-REVIE
 
 ```bash
 node scripts/_test_engine.js --net   # test motore (+ validazione Yahoo)
-node scripts/_test_ui.js             # smoke test UI (jsdom)
+node scripts/_test_entry.js          # test drawdown e strategie d'ingresso
+node scripts/_test_ui.js --show      # smoke test screener (jsdom)
+node scripts/_test_entry_ui.js       # smoke test pagina "Come entrare"
 node scripts/fetch_data.js SP500     # rigenera un universo
 node scripts/_serve.js               # preview locale su :8099
 ```
