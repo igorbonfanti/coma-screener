@@ -48,7 +48,7 @@ window.fetch = (url) => {
 };
 
 // carica gli script nell'ordine dell'index
-for (const f of ['scripts/engine.js', 'js/charts.js', 'js/live.js', 'js/store.js', 'js/export.js', 'js/app.js']) {
+for (const f of ['scripts/engine.js', 'js/ui.js', 'js/charts.js', 'js/live.js', 'js/store.js', 'js/export.js', 'js/app.js']) {
   const code = read(f);
   try { window.eval(code); } catch (e) { errors.push(f + ': ' + e.message); }
 }
@@ -62,9 +62,38 @@ const ck = (cond, name) => { if (!cond) fail.push(name); };
 
 setTimeout(() => {
   // stato iniziale (SP500, IS+OOS live)
-  ck($('#kpis').children.length >= 2, 'KPI popolati');
-  ck($('#kpis').textContent.includes('In-sample'), 'KPI in-sample (live)');
-  ck($('#kpis').textContent.includes('Out-of-sample'), 'KPI out-of-sample (live)');
+  ck($('#kpis').children.length >= 2, 'KPI out-of-sample popolati');
+  ck($('#kpis-is').children.length >= 2, 'KPI in-sample popolati (blocco separato)');
+  ck($('#kpis').textContent.includes('Alfa OOS'), 'KPI alfa out-of-sample');
+  ck($('#kpis-is').textContent.includes('Alfa IS'), 'KPI alfa in-sample');
+  ck(/β\s*-?[\d.]+/.test($('#kpis').textContent), 'KPI mostra il beta');
+  ck(/t\s*-?[\d.]+/.test($('#kpis').textContent), 'KPI mostra il t-stat');
+  // il verdetto è la sintesi in cima: deve dire se l'edge è dimostrabile o no
+  ck($('#verdict').querySelector('.verdict'), 'verdetto renderizzato');
+  ck(/edge|Sottoperformance|significativ/i.test($('#verdict').textContent), 'verdetto esprime un giudizio');
+  ck($('#verdict').textContent.includes('t '), 'verdetto cita il t-stat');
+  ck($('#port-n').textContent.includes('finestra'), 'portafoglio mostra la finestra fissa: ' + $('#port-n').textContent);
+  // struttura tabelle: thead/tbody per l'intestazione sticky
+  ck($('#port-tbl').querySelector('thead') && $('#port-tbl').querySelector('tbody'), 'portafoglio ha thead+tbody');
+  ck($('#screen-tbl').querySelector('thead'), 'screening ha thead');
+  ck($('#screen-summary').querySelector('.funnel'), 'imbuto dei filtri renderizzato');
+  ck($('#screen-tbl').querySelector('th[aria-sort]'), 'colonna ordinata marcata con aria-sort');
+  ck([...$('#seg-scheme').querySelectorAll('button')].every((b) => b.hasAttribute('aria-pressed')),
+    'segmented control con aria-pressed');
+  // avviso metodologico richiudibile, con richiamo compatto
+  ck(!$('#caveat').hidden && $('#caveat-show').hidden, 'avviso visibile all\'avvio');
+  $('#caveat-hide').click();
+  ck($('#caveat').hidden && !$('#caveat-show').hidden, 'avviso chiuso → resta il richiamo');
+  $('#caveat-show').click();
+  ck(!$('#caveat').hidden, 'richiamo riapre l\'avviso');
+
+  // `--show` stampa i KPI live: utile per confrontarli con quelli della pipeline
+  if (process.argv.includes('--show')) {
+    console.log('\n-- KPI live (SP500, mensile) --');
+    [...$('#kpis').children].forEach((c) => console.log('  • ' + c.textContent.replace(/\s+/g, ' ').trim()));
+    console.log('  portafoglio: ' + $('#port-n').textContent);
+    console.log('  ' + $('#bench-name').textContent + '\n');
+  }
   ck($('#port-tbl').querySelectorAll('tr').length > 3, 'tabella portafoglio righe (live)');
   ck($('#port-tbl').textContent.includes('MCD'), 'portafoglio contiene un pick noto (MCD)');
   ck($('#universe-select').querySelectorAll('[data-u]').length === 4, '4 toggle universi');
@@ -93,7 +122,7 @@ setTimeout(() => {
     ck(countMerged > countSP, `merge universi: analizzati ${countSP} -> ${countMerged}`);
     ck($('#universe-select').querySelectorAll('.uchip.on').length === 2, '2 universi attivi');
     ck($('#bench-name').textContent.includes('proxy USA'), 'benchmark combo USA = S&P 500 proxy');
-    ck($('#kpis').textContent.includes('Out-of-sample'), 'OOS live anche su combo');
+    ck($('#kpis').children.length >= 2 && $('#verdict').querySelector('.verdict'), 'OOS live anche su combo');
     ck($('#port-tbl').querySelectorAll('tr').length > 3, 'portafoglio su combo');
 
     // reset filtri: modifica una soglia e ripristina

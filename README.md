@@ -1,4 +1,4 @@
-# Coma Screener — Aziende da Coma · v1.4.0
+# Coma Screener — Aziende da Coma · v1.5.0
 
 Screener azionario per individuare **compounder di lungo periodo** ("aziende da coma": comprale e dimenticale) secondo la metodologia di Massimo Rea, con backtest **out-of-sample** onesto.
 
@@ -6,7 +6,7 @@ Screener azionario per individuare **compounder di lungo periodo** ("aziende da 
 
 **Universi selezionabili e combinabili:** S&P 500 · NYSE · NASDAQ · STOXX Europe 600 (+ preset "Tutti USA" e "USA + Europa"). Selezionando più universi l'app ne fa l'**unione**, ricalcola il Quality Score sul set combinato e produce screening + portafoglio + backtest IS/OOS live.
 
-**Benchmark congruente alla selezione:** S&P 500→^GSPC · NYSE→^NYA · NASDAQ→^IXIC · STOXX→^STOXX · combo USA→^GSPC · USA+Europa→MSCI ACWI. Mostrato sempre a video. Passando il mouse su opzioni e intestazioni compaiono spiegazioni.
+**Benchmark total return, congruente alla selezione:** S&P 500→`^SP500TR` · NASDAQ→`^XCMP` · NYSE→`VTI` · STOXX→`EXSA.DE` · combo USA→`^SP500TR` · USA+Europa→`ACWI`. Sono tutti **total return** perché le serie dei titoli usano l'adjusted close: confrontarle con un indice price-only (`^GSPC`, `^IXIC`, `^STOXX`) regala **1–3 punti percentuali l'anno** alla strategia. Mostrato sempre a video. Passando il mouse su opzioni e intestazioni compaiono spiegazioni.
 
 ## Come funziona
 
@@ -22,11 +22,22 @@ Un solo **motore isomorfo** (`scripts/engine.js`, JS puro senza dipendenze) gira
 | Filtri | ≥15 anni storia · nessun quinquennio rolling < −5% · R² log-prezzo ≥0.90 · CAGR ≥10% · MaxDD ≥ −45% |
 | Selezione | **Coma Quality Score** = media dei percentili di R² (regolarità) + Min5Y + MAR |
 | Pesi | Equipeso · Risk-parity (inverse-vol) · Resampled max-Sharpe (block bootstrap) — selezionabili |
-| Validazione | Backtest **out-of-sample** (selezione nel passato, test in avanti) + buy&hold vs ribilanciato |
+| Esecuzione | Ribilanciamento **annuale** con **0.15%** di costi sul controvalore scambiato, oppure buy&hold |
+| Validazione | Backtest **out-of-sample** (selezione nel passato, test in avanti) su finestra **fissa**, con **alfa, beta e t-stat** rispetto al benchmark total return |
+
+Sharpe e Sortino usano la media **aritmetica** degli excess return (non il CAGR) e un
+risk-free **variabile nel tempo** (€STR capitalizzato via `XEON.DE`, costante 3% prima del 2008).
 
 ## ⚠️ Caveat
 
-I risultati **in-sample** sono ottimistici per costruzione (survivorship + look-ahead): lo screening parte dai titoli oggi nell'indice con lunga storia. Affidarsi al **backtest out-of-sample**. Non è una raccomandazione d'investimento.
+- I risultati **in-sample** sono ottimistici per costruzione (survivorship + look-ahead): lo screening parte dai titoli oggi nell'indice con lunga storia.
+- Il **survivorship bias resta anche nell'out-of-sample**: l'elenco dei costituenti odierni non era conoscibile alla data di cutoff.
+- L'OOS è un **singolo fold** di 7 anni: non basta per distinguere skill da fortuna. Guardare il **t-stat dell'alfa**: sotto 2 non si può dire che ci sia un edge.
+- Il backtest è **lordo di tasse** (ritenuta sui dividendi, capital gain) e di costi di conversione valutaria.
+- Nessun dato **fondamentale** né di **valutazione** entra nella selezione: il modello sceglie sulla regolarità del prezzo passato, che è la conseguenza di un buon business, non la causa.
+
+Non è una raccomandazione d'investimento. Analisi critica completa della metodologia e
+roadmap dei miglioramenti: [`docs/METODOLOGIA-REVIEW.md`](docs/METODOLOGIA-REVIEW.md).
 
 ## Sviluppo
 

@@ -1,12 +1,12 @@
 /* Service worker coma-screener — app shell cache-first, dati network-first. */
-// v6: progetto Firebase separato (igorbonfanti-screener) e accesso opzionale.
+// v7: benchmark total return, alfa/beta/t-stat, nuova UI (+ js/ui.js).
 // Alzare SEMPRE la versione quando cambia un file in SHELL: la shell e'
 // cache-first, quindi senza un nome nuovo i client gia' installati
-// resterebbero puntati al vecchio progetto.
-const VERSION = 'coma-v6';
+// continuerebbero a vedere la versione precedente.
+const VERSION = 'coma-v7';
 const SHELL = [
   './', './index.html', './manifest.json', './icon.svg',
-  './scripts/engine.js', './js/charts.js', './js/live.js',
+  './scripts/engine.js', './js/ui.js', './js/charts.js', './js/live.js',
   './js/store.js', './js/export.js', './js/app.js',
   './auth-opzionale.js',
 ];

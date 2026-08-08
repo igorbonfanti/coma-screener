@@ -29,11 +29,31 @@ html[data-theme="light"]{
 html[data-theme="light"] body{background:var(--bg)}
 html[data-theme="light"] .kpi,html[data-theme="light"] .card{box-shadow:0 1px 3px rgba(16,24,40,.06)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--tx);font-family:'DM Sans',system-ui,sans-serif;line-height:1.5;font-size:14px}
+body{background:var(--bg);color:var(--tx);font-family:'DM Sans',system-ui,sans-serif;line-height:1.5;font-size:14px;-webkit-text-size-adjust:100%}
 .mono{font-family:'JetBrains Mono',monospace}
 a{color:var(--amber);text-decoration:none}
 .wrap{max-width:1180px;margin:0 auto;padding:20px 18px 80px}
-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+
+/* focus visibile ovunque: navigazione da tastiera */
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:6px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* tooltip (js/ui.js) — sostituisce quello nativo: appare subito e funziona al tap */
+.tip{position:absolute;z-index:100;background:var(--bg3);color:var(--tx);border:1px solid var(--line);
+  border-radius:9px;padding:8px 11px;font-size:12.5px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.28);
+  pointer-events:none;max-width:320px}
+.tip[hidden]{display:none}
+
+/* skeleton di caricamento */
+.skel{background:linear-gradient(90deg,var(--bg3) 25%,var(--line) 37%,var(--bg3) 63%);
+  background-size:400% 100%;animation:shim 1.3s ease infinite;border-radius:5px}
+@keyframes shim{0%{background-position:100% 50%}100%{background-position:0 50%}}
+.skel-lab{height:9px;width:52%;margin-bottom:10px}
+.skel-val{height:22px;width:70%;margin-bottom:8px}
+.skel-cmp{height:9px;width:84%}
+.skel-cell{height:11px;width:100%}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .brand{display:flex;align-items:center;gap:12px}
 .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--amber),#b45309);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;color:#1a1205}
 h1{font-size:19px;font-weight:700;letter-spacing:-.3px}
@@ -41,40 +61,106 @@ h1{font-size:19px;font-weight:700;letter-spacing:-.3px}
 select,button,input{font-family:inherit}
 .usel{background:var(--bg3);color:var(--tx);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer}
 .usel-group{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
-.uchip{background:var(--bg3);border:1px solid var(--line);color:var(--tx2);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;user-select:none}
+.uchip{background:var(--bg3);border:1px solid var(--line);color:var(--tx2);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;user-select:none;transition:background .12s,color .12s,border-color .12s}
+.uchip:hover{color:var(--tx);border-color:var(--tx3)}
 .uchip.on{background:var(--amber);color:#1a1205;border-color:var(--amber)}
+.uchip.on:hover{color:#1a1205}
 .usep{width:1px;height:22px;background:var(--line);margin:0 2px}
 .upreset{background:none;border:1px dashed var(--line);color:var(--tx3);border-radius:9px;padding:7px 11px;font-size:12px;cursor:pointer}
 .upreset:hover{color:var(--tx2);border-color:var(--tx3)}
-.banner{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:var(--r);padding:12px 14px;margin-bottom:18px;display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:var(--tx2)}
+
+/* barra universi: resta a portata di mano mentre si scorre */
+.toolbar{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:var(--r);
+  padding:11px 14px;margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+@supports not (backdrop-filter:blur(1px)){.toolbar{background:var(--bg2)}}
+.toolbar .tb-lab{color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+
+.banner{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:var(--r);padding:12px 14px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:var(--tx2)}
 .banner b{color:var(--amber2)}
-.banner .x{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:18px;line-height:1;padding:0 4px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.banner .x{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:18px;line-height:1;padding:0 4px;background:none;border:none}
+.banner-mini{font-size:11.5px;color:var(--tx3);margin-bottom:16px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;background:none;border:none;font-family:inherit}
+.banner-mini:hover{color:var(--amber2)}
+
+/* verdetto: la risposta prima dei numeri che la giustificano */
+.verdict{display:flex;gap:14px;align-items:flex-start;border-radius:var(--r);padding:16px 18px;margin-bottom:16px;border:1px solid}
+.verdict .vi{font-size:26px;line-height:1.1}
+.verdict .vt{font-size:17px;font-weight:700;letter-spacing:-.2px;margin-bottom:3px}
+.verdict .vd{font-size:12.5px;color:var(--tx2);line-height:1.55}
+.verdict .vd b{font-family:'JetBrains Mono',monospace;font-weight:600}
+.verdict.warn{background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.35)}
+.verdict.warn .vt{color:var(--amber2)}
+.verdict.good{background:rgba(52,211,153,.07);border-color:rgba(52,211,153,.35)}
+.verdict.good .vt{color:var(--green)}
+.verdict.bad{background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.35)}
+.verdict.bad .vt{color:var(--red)}
+.verdict.idle{background:var(--bg2);border-color:var(--line)}
+.verdict.idle .vt{color:var(--tx2)}
+
+.kpi-group{margin-bottom:16px}
+.kpi-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.kpi-head .t{font-size:11px;text-transform:uppercase;letter-spacing:.6px;font-weight:700;color:var(--tx2)}
+.kpi-head .h{font-size:11.5px;color:var(--tx3)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
 .kpi{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:14px}
-.kpi .lab{color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-.kpi .val{font-size:24px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.kpi.hero{border-color:rgba(245,158,11,.35);box-shadow:inset 3px 0 0 var(--amber)}
+.kpi.quiet{background:transparent;border-style:dashed}
+.kpi.quiet .val{font-size:19px;color:var(--tx2)}
+.kpi .lab{color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px}
+.kpi .val{font-size:24px;font-weight:700;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
 .kpi .cmp{font-size:11.5px;color:var(--tx2);margin-top:3px}
+.info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;
+  border:1px solid var(--tx3);color:var(--tx3);font-size:9px;font-weight:700;cursor:help;flex:none;line-height:1;
+  text-transform:none;letter-spacing:0;font-family:'DM Sans',sans-serif}
+.info:hover{color:var(--amber2);border-color:var(--amber2)}
+/* dentro le etichette maiuscole i simboli devono restare com'erano (β, non Β) */
+.kpi .lab .muted{text-transform:none;letter-spacing:.2px;font-family:'JetBrains Mono',monospace;font-size:10.5px}
 .card{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:18px}
-.card h2{font-size:15px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px}
-.card .desc{color:var(--tx3);font-size:12px;margin-bottom:14px}
+.card h2{font-size:15px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card .desc{color:var(--tx3);font-size:12px;margin-bottom:14px;max-width:78ch}
 .row{display:flex;gap:18px;flex-wrap:wrap}
 .col{flex:1;min-width:300px}
 .seg{display:inline-flex;background:var(--bg3);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px}
-.seg button{background:none;border:none;color:var(--tx2);padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
+.seg button{background:none;border:none;color:var(--tx2);padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:background .12s,color .12s}
+.seg button:hover{color:var(--tx)}
 .seg button.on{background:var(--amber);color:#1a1205}
-table{width:100%;border-collapse:collapse;font-size:12.5px}
-th,td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--line)}
-th{color:var(--tx3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;user-select:none}
+.seg-wrap{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.seg-lab{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--tx3);font-weight:600}
+
+.tbl-scroll{overflow-x:auto;overflow-y:auto;max-height:min(70vh,620px);border-radius:9px;border:1px solid var(--line)}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+th,td{text-align:right;padding:8px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+thead th{position:sticky;top:0;z-index:2;background:var(--bg3);color:var(--tx3);font-weight:600;font-size:11px;
+  text-transform:uppercase;letter-spacing:.4px;user-select:none}
+thead th[data-k]{cursor:pointer}
+thead th[data-k]:hover{color:var(--tx)}
+thead th[aria-sort]{color:var(--amber2)}
 th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:none}
+td{font-variant-numeric:tabular-nums}
 td.tk{font-weight:600;font-family:'JetBrains Mono',monospace}
-tr:hover td{background:rgba(255,255,255,.02)}
-.wbar{display:inline-block;height:7px;border-radius:4px;background:var(--amber);vertical-align:middle;margin-right:6px}
+tbody tr:hover td{background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.wbar{display:inline-block;height:7px;border-radius:4px;background:var(--amber);vertical-align:middle;margin-right:6px;min-width:2px}
 .pos{color:var(--green)}.neg{color:var(--red)}
+.empty{padding:26px 14px;text-align:center;color:var(--tx3);font-size:13px}
+.empty b{display:block;color:var(--tx2);font-size:14px;margin-bottom:4px}
+
 .chart-box{position:relative;height:300px}
-.ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px 22px;margin-bottom:16px}
-.ctrl label{display:flex;justify-content:space-between;font-size:12px;color:var(--tx2);margin-bottom:6px}
-.ctrl label b{color:var(--amber2);font-family:'JetBrains Mono',monospace}
-input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer}
+.chart-cap{font-size:11.5px;color:var(--tx3);margin-top:6px;text-align:center}
+.ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px 22px;margin-bottom:14px}
+.ctrl label{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--tx2);margin-bottom:6px;align-items:center}
+.ctrl label b{color:var(--amber2);font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer;height:20px}
+
+/* imbuto dei filtri: mostra a colpo d'occhio quale soglia sta scartando i titoli */
+.funnel{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.fstep{display:inline-flex;align-items:baseline;gap:5px;background:var(--bg3);border:1px solid var(--line);
+  border-radius:8px;padding:5px 9px;font-size:11.5px;color:var(--tx3)}
+.fstep b{font-family:'JetBrains Mono',monospace;color:var(--tx2);font-size:12.5px;font-variant-numeric:tabular-nums}
+.fstep.cut b{color:var(--red)}
+.fstep.keep{border-color:rgba(245,158,11,.4)}
+.fstep.keep b{color:var(--amber2)}
+.farrow{color:var(--tx3);font-size:11px}
 .pill{display:inline-block;background:var(--bg3);border:1px solid var(--line);border-radius:20px;padding:3px 10px;font-size:11.5px;color:var(--tx2);margin-right:6px}
 .muted{color:var(--tx3)}
 .btn{background:var(--amber);color:#1a1205;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
@@ -89,8 +175,23 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer}
 .snap{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--tx2)}
 .snap .ld{cursor:pointer;color:var(--amber)}
 .snap .del{margin-left:auto;cursor:pointer;color:var(--tx3);font-size:16px}
-.foot{text-align:center;color:var(--tx3);font-size:11px;margin-top:30px}
-@media(max-width:640px){.chart-box{height:240px}.kpi .val{font-size:20px}}
+.foot{text-align:center;color:var(--tx3);font-size:11px;margin-top:30px;line-height:1.8}
+@media(max-width:760px){
+  .wrap{padding:14px 12px 60px}
+  .card{padding:14px}
+  .chart-box{height:230px}
+  .kpis{grid-template-columns:repeat(2,1fr);gap:9px}
+  .kpi{padding:11px}
+  .kpi .val{font-size:19px}
+  .kpi.quiet .val{font-size:16px}
+  .verdict{padding:13px 14px;gap:11px}
+  .verdict .vi{font-size:21px}
+  .verdict .vt{font-size:15px}
+  .toolbar{padding:9px 11px}
+  .tbl-scroll{max-height:60vh}
+  th,td{padding:7px 7px;font-size:12px}
+}
+@media(max-width:359px){.kpis{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -106,61 +207,87 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer}
     <button id="theme-toggle" class="usel" title="Cambia tema chiaro / scuro" aria-label="Cambia tema">🌙</button>
   </header>
 
-  <div class="card" style="padding:14px 18px;margin-bottom:18px">
+  <div class="toolbar">
     <div class="usel-group" id="universe-select"></div>
   </div>
 
   <div class="banner" id="caveat">
-    <span>⚠️</span>
-    <div><b>Leggi prima di fidarti dei numeri.</b> Lo screening usa i titoli <b>oggi</b> nell'indice con ≥20 anni di storia: per costruzione seleziona solo i <b>sopravvissuti</b> (survivorship bias) → il backtest <b>in-sample</b> è ottimistico e circolare. Affidati al backtest <b>out-of-sample</b> (selezione fatta nel passato, testata in avanti): è l'unico onesto. Non è una raccomandazione d'investimento.</div>
-    <span class="x" onclick="this.parentNode.style.display='none'">×</span>
+    <span aria-hidden="true">⚠️</span>
+    <div><b>Leggi prima di fidarti dei numeri.</b> Lo screening usa i titoli <b>oggi</b> nell'indice: per costruzione seleziona solo i <b>sopravvissuti</b> (survivorship bias), e il bias resta <b>anche nell'out-of-sample</b>, perché quell'elenco nel passato non era conoscibile. Il backtest <b>in-sample</b> è ottimistico e circolare. Guarda l'<b>alfa out-of-sample e il suo t-stat</b>: un CAGR alto con beta basso non è bravura, e con <b>t sotto 2 l'alfa è indistinguibile dal caso</b>. Non è una raccomandazione d'investimento.</div>
+    <button class="x" id="caveat-hide" aria-label="Nascondi l'avviso metodologico">×</button>
+  </div>
+  <button class="banner-mini" id="caveat-show" hidden>⚠️ Mostra l'avviso metodologico</button>
+
+  <div id="verdict"></div>
+
+  <div class="kpi-group">
+    <div class="kpi-head">
+      <span class="t">Validazione onesta</span>
+      <span class="h">selezione fatta nel passato, testata in avanti — è il numero su cui basarsi <span class="info" title="Out-of-sample: lo screening viene rifatto usando solo i dati fino a ~7 anni fa, e il portafoglio così ottenuto viene testato sul periodo successivo, mai visto in fase di selezione.">i</span></span>
+    </div>
+    <div class="kpis" id="kpis"></div>
   </div>
 
-  <div class="kpis" id="kpis"></div>
+  <div class="kpi-group">
+    <div class="kpi-head">
+      <span class="t">Riferimento in-sample</span>
+      <span class="h">ottimistico e circolare: selezione e test sullo stesso periodo <span class="info" title="In-sample significa che i titoli sono stati scelti sapendo già come sarebbero andati. Serve solo come limite superiore teorico, mai come previsione.">i</span></span>
+    </div>
+    <div class="kpis" id="kpis-is"></div>
+  </div>
 
   <div class="card">
-    <h2>📈 Backtest portafoglio canonico <span class="pill" id="bench-name"></span></h2>
-    <div class="desc">Curva equity (base 100, scala log) e drawdown. Confronta in-sample vs out-of-sample. Il benchmark si adatta agli universi selezionati.</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-      <div class="seg" id="seg-period">
-        <button data-v="oos" class="on" title="Out-of-sample: selezione su dati passati (fino a ~7 anni fa) testata sul periodo successivo. Il risultato più onesto.">Out-of-sample</button>
-        <button data-v="insample" title="In-sample: selezione e test sullo stesso intero storico. Sempre ottimistico (circolare): solo riferimento.">In-sample</button>
+    <h2>📈 Backtest portafoglio <span class="pill" id="bench-name"></span></h2>
+    <div class="desc">Curva equity (base 100, scala log) e drawdown. Il benchmark si adatta agli universi selezionati ed è sempre <b>total return</b> (dividendi reinvestiti), come le serie dei titoli. Ribilanciamento annuale con 0.15% di costi sul controvalore scambiato.</div>
+    <div class="seg-wrap" style="margin-bottom:14px">
+      <span class="seg-lab">Periodo</span>
+      <div class="seg" id="seg-period" role="group" aria-label="Periodo del backtest">
+        <button data-v="oos" class="on" aria-pressed="true" title="Out-of-sample: selezione su dati passati (fino a ~7 anni fa) testata sul periodo successivo. Il risultato più onesto.">Out-of-sample</button>
+        <button data-v="insample" aria-pressed="false" title="In-sample: selezione e test sullo stesso intero storico. Sempre ottimistico (circolare): solo riferimento.">In-sample</button>
       </div>
-      <div class="seg" id="seg-scheme">
-        <button data-v="equal" class="on" title="Equipeso: stesso peso a ogni titolo (1/N). Il più robusto, nessuna stima richiesta.">Equipeso</button>
-        <button data-v="invvol" title="Risk-parity: peso inversamente proporzionale alla volatilità, così ogni titolo contribuisce ugualmente al rischio.">Risk-parity</button>
-        <button data-v="resampled" title="Max-Sharpe: ottimizza rischio/rendimento (resampled, block bootstrap). Cerca i pesi migliori ma concentra di più.">Max-Sharpe</button>
+      <span class="seg-lab">Pesi</span>
+      <div class="seg" id="seg-scheme" role="group" aria-label="Schema di pesatura">
+        <button data-v="equal" class="on" aria-pressed="true" title="Equipeso: stesso peso a ogni titolo (1/N). Il più robusto, nessuna stima richiesta.">Equipeso</button>
+        <button data-v="invvol" aria-pressed="false" title="Risk-parity: peso inversamente proporzionale alla volatilità, così ogni titolo contribuisce ugualmente al rischio.">Risk-parity</button>
+        <button data-v="resampled" aria-pressed="false" title="Max-Sharpe: ottimizza rischio/rendimento (resampled, block bootstrap). Cerca i pesi migliori ma concentra di più.">Max-Sharpe</button>
       </div>
-      <div class="seg" id="seg-mode">
-        <button data-v="rebal" class="on" title="Pesi mantenuti costanti nel tempo (ribilanciamento periodico).">Ribilanciato</button>
-        <button data-v="buyhold" title="Comprato una volta e lasciato correre: i pesi driftano. Coerente con la tesi 'compra e dimentica'.">Buy &amp; hold</button>
+      <span class="seg-lab">Gestione</span>
+      <div class="seg" id="seg-mode" role="group" aria-label="Modalità di gestione">
+        <button data-v="rebal" class="on" aria-pressed="true" title="Ritorno ai pesi target una volta l'anno, pagando 0.15% sul controvalore scambiato.">Ribilanciato</button>
+        <button data-v="buyhold" aria-pressed="false" title="Comprato una volta e lasciato correre: i pesi driftano, zero costi. Coerente con la tesi 'compra e dimentica'.">Buy &amp; hold</button>
       </div>
     </div>
     <div class="row">
-      <div class="col"><div class="chart-box"><canvas id="equity"></canvas></div></div>
-      <div class="col"><div class="chart-box"><canvas id="drawdown"></canvas></div></div>
+      <div class="col">
+        <div class="chart-box"><canvas id="equity" aria-label="Curva di crescita del portafoglio contro il benchmark" role="img"></canvas></div>
+        <div class="chart-cap">Crescita di 100 € — scala logaritmica: pendenze uguali = rendimenti uguali</div>
+      </div>
+      <div class="col">
+        <div class="chart-box"><canvas id="drawdown" aria-label="Drawdown del portafoglio contro il benchmark" role="img"></canvas></div>
+        <div class="chart-cap">Distanza dal massimo precedente — quanto si è dovuto sopportare</div>
+      </div>
     </div>
   </div>
 
   <div class="card">
-    <h2>🎯 Portafoglio canonico <span class="pill" id="port-n"></span></h2>
-    <div class="desc">Top titoli per Score, pesati con Resampled Sharpe Optimization (cap 20% / floor 2%).</div>
-    <div style="overflow-x:auto"><table id="port-tbl"></table></div>
+    <h2>🎯 Portafoglio <span class="pill" id="port-n"></span></h2>
+    <div class="desc">I titoli che superano tutte le soglie, ordinati per peso. I pesi seguono lo schema selezionato sopra (cap 20% / floor 2% per titolo).</div>
+    <div class="tbl-scroll"><table id="port-tbl"></table></div>
   </div>
 
   <div class="card">
     <h2>🔎 Screening interattivo <button class="upreset" id="btn-reset" style="margin-left:auto" title="Ripristina tutte le soglie ai valori di default">↺ Reset filtri</button></h2>
-    <div class="desc">Muovi le soglie: il filtro gira nel browser sulle metriche già calcolate, istantaneo.</div>
+    <div class="desc">Muovi le soglie: il filtro gira nel browser sulle metriche già calcolate, istantaneo. L'imbuto sotto mostra quale soglia sta effettivamente scartando i titoli.</div>
     <div class="ctrls" id="screen-ctrls"></div>
-    <div style="margin-bottom:12px" id="screen-summary" class="muted"></div>
-    <div style="overflow-x:auto"><table id="screen-tbl"></table></div>
+    <div id="screen-summary"></div>
+    <div class="tbl-scroll"><table id="screen-tbl"></table></div>
   </div>
 
   <div class="card" id="build-card">
     <h2>💾 Costruisci &amp; salva</h2>
     <div class="desc">Clicca ★ nella tabella screening per aggiungere titoli a un basket custom. Basket vuoto = usa il portafoglio canonico corrente. I pesi seguono lo schema selezionato sopra.</div>
     <div id="basket-chips"></div>
-    <div id="basket-metrics" class="kpis" style="margin:14px 0 0"></div>
+    <div id="basket-metrics" class="kpis" style="margin:14px 0 0" aria-live="polite"></div>
     <div class="build-actions">
       <input id="snap-note" placeholder="Nota (opzionale) — es. revisione giugno">
       <button class="btn" id="btn-save">💾 Salva snapshot</button>
@@ -173,10 +300,13 @@ input[type=range]{width:100%;accent-color:var(--amber);cursor:pointer}
     </div>
   </div>
 
-  <div class="foot">coma-screener <b>v1.4.0</b> · dati Yahoo Finance, total return in EUR · metodologia "Aziende da Coma" (M. Rea) · uso personale</div>
+  <div class="foot">coma-screener <b>v1.5.0</b> · dati Yahoo Finance, total return in EUR · metodologia "Aziende da Coma" (M. Rea) · uso personale<br>
+    Benchmark total return · ribilanciamento annuale con costi 0.15% · risk-free €STR · alfa, beta e t-stat sulla regressione col benchmark<br>
+    <span class="muted">Backtest lordo di imposte. Non è una raccomandazione d'investimento.</span></div>
 </div>
 
 <script src="scripts/engine.js"></script>
+<script src="js/ui.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/live.js"></script>
 <script src="js/store.js"></script>

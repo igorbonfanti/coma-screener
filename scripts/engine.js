@@ -18,6 +18,9 @@
   const sum = (a) => a.reduce((s, x) => s + x, 0);
   const mean = (a) => (a.length ? sum(a) / a.length : NaN);
 
+  /** Tasso risk-free di fallback (media EONIA/€STR pre-2008, usata quando manca la serie). */
+  const RF_DEFAULT = 0.03;
+
   /** RNG deterministico (mulberry32) per riproducibilita del resampling */
   function rng(seed) {
     let s = seed >>> 0;
@@ -56,11 +59,115 @@
     return Math.sqrt(v) * Math.sqrt(ppy);
   }
 
+  /**
+   * Downside deviation (target 0). Il denominatore e il numero TOTALE di
+   * osservazioni, non solo quelle negative: dividere per i soli negativi
+   * sovrastima la downside vol di ~sqrt(2) e in modo non uniforme fra titoli.
+   */
   function downsideVol(prices, ppy) {
-    const r = periodReturns(prices).filter((x) => x < 0);
+    const r = periodReturns(prices);
     if (r.length < 2) return NaN;
-    const v = sum(r.map((x) => x * x)) / r.length; // target 0
-    return Math.sqrt(v) * Math.sqrt(ppy);
+    let ss = 0;
+    for (const x of r) if (x < 0) ss += x * x;
+    return Math.sqrt(ss / r.length) * Math.sqrt(ppy);
+  }
+
+  // ---- risk-free --------------------------------------------------------------
+  /**
+   * Normalizza `rf` in un array di rendimenti del conto cash PER PERIODO, lungo `n`.
+   *   number -> tasso annuo costante
+   *   array  -> rendimenti per periodo gia pronti (es. da un ETF monetario €STR),
+   *             allineati alla CODA della serie di rendimenti.
+   */
+  function rfPerPeriod(rf, ppy, n) {
+    if (Array.isArray(rf) && rf.length) {
+      if (rf.length >= n) return rf.slice(rf.length - n);
+      const head = new Array(n - rf.length).fill(Math.pow(1 + RF_DEFAULT, 1 / ppy) - 1);
+      return head.concat(rf);
+    }
+    const per = Math.pow(1 + (rf == null ? RF_DEFAULT : rf), 1 / ppy) - 1;
+    return new Array(n).fill(per);
+  }
+
+  /** Rendimenti in eccesso sul risk-free, periodo per periodo. */
+  function excessReturns(rets, rf, ppy) {
+    const c = rfPerPeriod(rf, ppy, rets.length);
+    return rets.map((x, i) => x - c[i]);
+  }
+
+  /** Risk-free annualizzato effettivo sul campione (per reporting). */
+  function annualizedRf(rf, ppy, n) {
+    const c = rfPerPeriod(rf, ppy, n);
+    let g = 1; for (const x of c) g *= 1 + x;
+    return Math.pow(g, ppy / c.length) - 1;
+  }
+
+  /**
+   * Sharpe standard: media ARITMETICA degli excess return, annualizzata, divisa
+   * per la vol degli excess return. Usare il CAGR (geometrico) al numeratore
+   * sottostima lo Sharpe di ~vol^2/2 e penalizza i titoli volatili, introducendo
+   * un tilt low-vol non voluto nel ranking.
+   */
+  function sharpeRatio(prices, ppy, rf) {
+    const r = periodReturns(prices);
+    if (r.length < 2) return NaN;
+    const e = excessReturns(r, rf, ppy);
+    const m = mean(e);
+    const v = sum(e.map((x) => (x - m) * (x - m))) / (e.length - 1);
+    const sd = Math.sqrt(v);
+    return sd > 0 ? (m * ppy) / (sd * Math.sqrt(ppy)) : NaN;
+  }
+
+  /** Sortino: excess return aritmetico annualizzato / downside deviation degli excess. */
+  function sortinoRatio(prices, ppy, rf) {
+    const r = periodReturns(prices);
+    if (r.length < 2) return NaN;
+    const e = excessReturns(r, rf, ppy);
+    const m = mean(e);
+    let ss = 0;
+    for (const x of e) if (x < 0) ss += x * x;
+    const dd = Math.sqrt(ss / e.length) * Math.sqrt(ppy);
+    return dd > 0 ? (m * ppy) / dd : NaN;
+  }
+
+  /**
+   * Regressione dei rendimenti del portafoglio sul benchmark (entrambi in eccesso
+   * sul risk-free): alfa annualizzato, beta, t-stat dell'alfa, tracking error,
+   * information ratio. E il test che distingue skill da esposizione al mercato.
+   */
+  function regress(portRets, benchRets, rf, ppy) {
+    const n = Math.min(portRets.length, benchRets.length);
+    if (n < 12) return null;
+    const p = portRets.slice(portRets.length - n);
+    const b = benchRets.slice(benchRets.length - n);
+    const c = rfPerPeriod(rf, ppy, n);
+    const y = p.map((x, i) => x - c[i]);
+    const x = b.map((v, i) => v - c[i]);
+    const my = mean(y), mx = mean(x);
+    let sxy = 0, sxx = 0, syy = 0;
+    for (let i = 0; i < n; i++) {
+      const dx = x[i] - mx, dy = y[i] - my;
+      sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+    }
+    if (!(sxx > 0)) return null;
+    const beta = sxy / sxx;
+    const a = my - beta * mx;                       // alfa per periodo
+    let sse = 0;
+    for (let i = 0; i < n; i++) { const e = y[i] - (a + beta * x[i]); sse += e * e; }
+    const s2 = sse / Math.max(1, n - 2);
+    const seA = Math.sqrt(s2 * (1 / n + (mx * mx) / sxx));
+    const seB = Math.sqrt(s2 / sxx);
+    const d = p.map((v, i) => v - b[i]);            // rendimento relativo
+    const md = mean(d);
+    const vd = sum(d.map((z) => (z - md) * (z - md))) / Math.max(1, d.length - 1);
+    const te = Math.sqrt(vd * ppy);
+    return {
+      n, beta, betaSe: seB,
+      alpha: a * ppy,                               // alfa annualizzato
+      alphaT: seA > 0 ? a / seA : NaN,              // t-stat (invariante alla scala)
+      r2: syy > 0 ? 1 - sse / syy : NaN,
+      te, ir: te > 0 ? (md * ppy) / te : NaN,
+    };
   }
 
   function maxDrawdown(prices) {
@@ -147,12 +254,10 @@
     return rows;
   }
 
-  /** Calcola tutte le metriche per una serie di prezzi. */
+  /** Calcola tutte le metriche per una serie di prezzi. `rf` = numero o serie. */
   function metricsFor(prices, ppy, rf) {
-    rf = rf == null ? 0.03 : rf;
     const c = cagr(prices, ppy);
     const vol = annualizedVol(prices, ppy);
-    const dvol = downsideVol(prices, ppy);
     const mdd = maxDrawdown(prices);
     const min5y = rollingMinReturn(prices, Math.round(5 * ppy));
     const r2 = logLinearityR2(prices);
@@ -161,8 +266,8 @@
     return {
       cagr: c, vol, mdd, min5y, r2, reg,
       mar: ddAbs > 0 ? c / ddAbs : NaN,                 // standard: CAGR / |MaxDD|
-      sortino: dvol > 0 ? (c - rf) / dvol : NaN,
-      sharpe: vol > 0 ? (c - rf) / vol : NaN,
+      sortino: sortinoRatio(prices, ppy, rf),
+      sharpe: sharpeRatio(prices, ppy, rf),
       score: (vol > 0 && ddAbs > 0) ? c / (vol * ddAbs) : NaN, // score storico Colab
       days: prices.length,
     };
@@ -174,12 +279,15 @@
     const minDays = Math.round((t.minYears || 20) * (t.ppy || 252));
     const out = [];
     const skipped = { storico: 0, cinqueY: 0, r2: 0, cagr: 0, dd: 0 };
+    // NB: i confronti sono in forma "passa solo se isFinite && dentro soglia":
+    // con `NaN < soglia` (che e sempre false) una riga con metrica mancante
+    // passerebbe silenziosamente il filtro.
     for (const row of rows) {
-      if (row.days < minDays) { skipped.storico++; continue; }
-      if (row.min5y < (t.tolerance5y ?? -0.05)) { skipped.cinqueY++; continue; }
-      if (row.r2 < (t.minR2 ?? 0.90)) { skipped.r2++; continue; }
-      if (t.minCagr != null && row.cagr < t.minCagr) { skipped.cagr++; continue; }
-      if (t.maxDD != null && row.mdd < t.maxDD) { skipped.dd++; continue; }
+      if (!(row.days >= minDays)) { skipped.storico++; continue; }
+      if (!(row.min5y >= (t.tolerance5y ?? -0.05))) { skipped.cinqueY++; continue; }
+      if (!(row.r2 >= (t.minR2 ?? 0.90))) { skipped.r2++; continue; }
+      if (t.minCagr != null && !(row.cagr >= t.minCagr)) { skipped.cagr++; continue; }
+      if (t.maxDD != null && !(row.mdd >= t.maxDD)) { skipped.dd++; continue; }
       out.push(row);
     }
     const key = t.sortBy || 'quality';
@@ -288,8 +396,10 @@
    */
   function resampledWeights(R, opt) {
     opt = opt || {};
-    const floor = opt.floor ?? 0.02, cap = opt.cap ?? 0.20, rf = opt.rf ?? 0.03;
+    const floor = opt.floor ?? 0.02, cap = opt.cap ?? 0.20;
     const ppy = opt.ppy || 252;
+    // l'ottimizzatore vuole uno scalare: se rf e una serie, usa il suo annualizzato
+    const rf = Array.isArray(opt.rf) ? annualizedRf(opt.rf, ppy, opt.rf.length) : (opt.rf ?? RF_DEFAULT);
     const nSim = opt.nSim || 500;
     const winLen = Math.min(R.length, Math.round((opt.windowYears || 5) * ppy));
     const meanBlock = opt.meanBlock || 21; // ~1 mese di trading
@@ -326,54 +436,83 @@
   }
 
   // ---- backtest --------------------------------------------------------------
+  /** Numero di periodi fra due ribilanciamenti. 0 = mai (buy & hold). */
+  function rebalanceStep(freq, ppy) {
+    if (!freq || freq === 'none' || freq === 'buyhold') return 0;
+    const perYear = { daily: ppy, weekly: 52, monthly: 12, quarterly: 4, annual: 1 }[freq];
+    if (!perYear) return 0;
+    return Math.max(1, Math.round(ppy / perYear));
+  }
+
   /**
    * Backtest di un portafoglio dato un set di curve allineate.
    * `curves` = { ticker: number[] } gia allineate sullo stesso indice temporale.
-   * rebalance=true -> pesi costanti (ribilanciato ogni periodo)
-   * rebalance=false -> buy & hold (i pesi driftano) — coerente con la tesi "coma".
-   * Ritorna la curva equity (base 100).
+   *
+   * opt = { rebalance:'none'|'annual'|'quarterly'|'monthly'|'daily', ppy, costBps }
+   *   - 'none'   -> buy & hold, i pesi driftano (coerente con la tesi "coma")
+   *   - altro    -> ritorno ai pesi target alla frequenza scelta, pagando
+   *                 `costBps` punti base sul notional effettivamente scambiato.
+   * Ribilanciare a ogni periodo su dati giornalieri e irrealizzabile e regala un
+   * rebalancing premium gratuito: default 'annual'.
+   *
+   * Ritorna la curva equity (base 100) con `.turnover` = notional scambiato/anno.
    */
-  function backtestPortfolio(curves, tickers, weights, rebalance) {
+  function backtestPortfolio(curves, tickers, weights, opt) {
+    if (opt === true) opt = { rebalance: 'daily' };
+    else if (opt === false || opt == null) opt = { rebalance: 'none' };
+    const ppy = opt.ppy || 252;
+    const step = rebalanceStep(opt.rebalance, ppy);
+    const cost = (opt.costBps || 0) / 10000;
+    const k = tickers.length;
     const T = curves[tickers[0]].length;
     const eq = new Array(T);
-    if (rebalance) {
-      // rendimenti pesati periodo per periodo
-      const rets = tickers.map((t) => periodReturns(curves[t]));
-      eq[0] = 100;
-      for (let i = 1; i < T; i++) {
-        let r = 0;
-        for (let j = 0; j < tickers.length; j++) r += weights[j] * rets[j][i - 1];
-        eq[i] = eq[i - 1] * (1 + r);
+    let w = weights.slice(), v = 100, traded = 0;
+    eq[0] = v;
+    for (let i = 1; i < T; i++) {
+      let g = 0;
+      const wn = new Array(k);
+      for (let j = 0; j < k; j++) {
+        const p0 = curves[tickers[j]][i - 1], p1 = curves[tickers[j]][i];
+        wn[j] = w[j] * (p0 > 0 ? p1 / p0 : 1);
+        g += wn[j];
       }
-    } else {
-      // buy & hold: quote fisse comprate a t0
-      const shares = tickers.map((t, j) => (100 * weights[j]) / curves[t][0]);
-      for (let i = 0; i < T; i++) {
-        let v = 0;
-        for (let j = 0; j < tickers.length; j++) v += shares[j] * curves[tickers[j]][i];
-        eq[i] = v;
+      if (!(g > 0)) { eq[i] = v; continue; }
+      v *= g;
+      for (let j = 0; j < k; j++) wn[j] /= g;      // pesi driftati
+      w = wn;
+      if (step && i % step === 0) {
+        let tv = 0;
+        for (let j = 0; j < k; j++) tv += Math.abs(weights[j] - w[j]);
+        traded += tv;
+        v *= 1 - tv * cost;
+        w = weights.slice();
       }
+      eq[i] = v;
     }
+    eq.turnover = T > 1 ? traded / ((T - 1) / ppy) : 0;
     return eq;
   }
 
-  /** Metriche sintetiche di una curva equity. */
+  /** Metriche sintetiche di una curva equity. `rf` = numero o serie per periodo. */
   function curveMetrics(eq, ppy, rf) {
-    rf = rf == null ? 0.03 : rf;
+    const c = cagr(eq, ppy), vol = annualizedVol(eq, ppy), mdd = maxDrawdown(eq);
     return {
-      cagr: cagr(eq, ppy), vol: annualizedVol(eq, ppy),
-      mdd: maxDrawdown(eq),
-      mar: Math.abs(maxDrawdown(eq)) > 0 ? cagr(eq, ppy) / Math.abs(maxDrawdown(eq)) : NaN,
-      sharpe: annualizedVol(eq, ppy) > 0 ? (cagr(eq, ppy) - rf) / annualizedVol(eq, ppy) : NaN,
+      cagr: c, vol, mdd,
+      mar: Math.abs(mdd) > 0 ? c / Math.abs(mdd) : NaN,
+      sharpe: sharpeRatio(eq, ppy, rf),
+      sortino: sortinoRatio(eq, ppy, rf),
+      turnover: isFinite(eq.turnover) ? eq.turnover : null,
     };
   }
 
   return {
+    RF_DEFAULT,
     rng, cagr, periodReturns, annualizedVol, downsideVol, maxDrawdown,
     rollingMinReturn, logLinearityR2, logResidStd, percentileRanks, addQualityScore,
+    rfPerPeriod, excessReturns, annualizedRf, sharpeRatio, sortinoRatio, regress,
     metricsFor, screen,
     colMeans, covMatrix, portfolioStats, projectCappedSimplex, maxSharpe,
     equalWeights, inverseVolWeights, blockBootstrap, resampledWeights, computeWeights,
-    backtestPortfolio, curveMetrics,
+    rebalanceStep, backtestPortfolio, curveMetrics,
   };
 });

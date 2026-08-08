@@ -23,9 +23,15 @@ const PARAMS = {
   minYears: 15, tolerance5y: -0.05, minR2: 0.90, minCagr: 0.10, maxDD: -0.45,
   topN: 20, sortBy: 'quality',
   weightFloor: 0.02, weightCap: 0.20, nSim: 500, windowYears: 5, rf: 0.03,
+  rebalance: 'annual', // ribilanciamento realizzabile (era: ogni giorno di borsa)
+  costBps: 15,         // 0.15% sul notional scambiato: commissioni + spread retail
   oosCutoffYears: 7,   // ultimi 7 anni tenuti fuori campione per la validazione
   oosMinYears: 12,     // storia minima richiesta NEL pre-cutoff per lo screen OOS
 };
+
+// Proxy del risk-free in EUR: ETF monetario overnight (€STR capitalizzato).
+// Storia dal 2008; prima si usa la costante E.RF_DEFAULT (~media EONIA 2000-07).
+const RF_SYMBOL = 'XEON.DE';
 
 // ---- util ------------------------------------------------------------------
 const ymd = (sec) => new Date(sec * 1000).toISOString().slice(0, 10);
@@ -147,12 +153,33 @@ function alignPicks(picks, eur) {
   return { ts: common, prices, rets };
 }
 
-function metricsRows(eur) {
+// ---- risk-free -------------------------------------------------------------
+/**
+ * Rendimenti del conto cash per periodo, allineati a `ts` (lunghezza ts.length-1).
+ * Forward-fill dell'ETF monetario; prima del suo inizio, costante E.RF_DEFAULT.
+ */
+function rfReturnsFor(ts, rfSer, ppy) {
+  const flat = Math.pow(1 + E.RF_DEFAULT, 1 / ppy) - 1;
+  if (!rfSer || !rfSer.ts.length) return ts.slice(1).map(() => flat);
+  const vals = [];
+  let last = null, j = 0;
+  for (const d of ts) {
+    while (j < rfSer.ts.length && rfSer.ts[j] <= d) { last = rfSer.px[j]; j++; }
+    vals.push(last);
+  }
+  const out = [];
+  for (let i = 1; i < vals.length; i++) {
+    out.push(vals[i - 1] > 0 && vals[i] > 0 ? vals[i] / vals[i - 1] - 1 : flat);
+  }
+  return out;
+}
+
+function metricsRows(eur, rfSer) {
   const rows = [];
   for (const t of Object.keys(eur)) {
     const s = eur[t];
     if (s.px.length < 30) continue;
-    const m = E.metricsFor(s.px, PPY, PARAMS.rf);
+    const m = E.metricsFor(s.px, PPY, rfReturnsFor(s.ts, rfSer, PPY));
     rows.push({
       t, ccy: s.currency, days: s.px.length,
       start: ymd(s.ts[0]), end: ymd(s.ts[s.ts.length - 1]),
@@ -166,12 +193,17 @@ function metricsRows(eur) {
 
 const SCHEMES = ['equal', 'invvol', 'resampled'];
 
-/** Screen -> pesi per TUTTI gli schemi su un set di serie EUR (eventualmente troncate). */
-function buildPortfolio(rows, eur, params) {
+/**
+ * Screen -> pesi per TUTTI gli schemi.
+ * `rows` porta le metriche di selezione (storia piena); `eurW` e la finestra su
+ * cui si stimano i pesi e si esegue il backtest: sono cose diverse e vanno tenute
+ * separate, altrimenti il periodo di test dipende dai titoli selezionati.
+ */
+function buildPortfolio(rows, eurW, params) {
   const scr = E.screen(rows, { ...params, ppy: PPY, sortBy: 'quality' });
-  const picks = scr.picks.map((r) => r.t).filter((t) => eur[t] && eur[t].px.length > PPY);
+  const picks = scr.picks.map((r) => r.t).filter((t) => eurW[t] && eurW[t].px.length > PPY);
   if (picks.length < 2) return null;
-  const al = alignPicks(picks, eur);
+  const al = alignPicks(picks, eurW);
   if (al.rets.length < PPY) return null;
   const opt = { floor: params.weightFloor, cap: params.weightCap, rf: params.rf,
     ppy: PPY, nSim: params.nSim, windowYears: params.windowYears, seed: 42 };
@@ -196,35 +228,63 @@ function sliceEur(eur, from, to) {
 /**
  * Backtest dei picks per TUTTI gli schemi (i picks sono identici → allineamento
  * e benchmark calcolati una volta sola, condivisi). schemeWeights = {nome:[pesi]}.
+ * Il ribilanciamento e alla frequenza di PARAMS.rebalance e paga PARAMS.costBps
+ * sul notional scambiato; per ogni schema viene stimata anche la regressione sul
+ * benchmark (alfa, beta, t-stat) — l'unico modo per distinguere skill da beta.
  */
-function backtestSchemes(picks, schemeWeights, eur, benchEur) {
+function backtestSchemes(picks, schemeWeights, eur, benchEur, rfSer) {
   const al = alignPicks(picks, eur);
   if (al.ts.length < 30) return null;
-  // benchmark allineato in EUR, base 100
+  // benchmark allineato in EUR, base 100 (forward-fill dei giorni mancanti)
   let benchDaily = null;
   if (benchEur) {
     const bm = new Map(benchEur.ts.map((d, i) => [d, benchEur.px[i]]));
     const bvals = al.ts.map((d) => (bm.has(d) ? bm.get(d) : null));
     for (let i = 1; i < bvals.length; i++) if (bvals[i] == null) bvals[i] = bvals[i - 1];
-    const i0 = bvals.findIndex((x) => x != null);
-    if (i0 >= 0) { const base = bvals[i0]; benchDaily = bvals.map((x) => (x == null ? null : (x / base) * 100)); }
+    if (bvals[0] != null) benchDaily = bvals.map((x) => (x / bvals[0]) * 100);
   }
+  const rfRet = rfReturnsFor(al.ts, rfSer, PPY);
+  const benchRets = benchDaily ? E.periodReturns(benchDaily) : null;
+  const bopt = { ppy: PPY, costBps: PARAMS.costBps };
   const months = toMonthly(al.ts, al.prices[picks[0]]).months;
   const out = {
     from: ymd(al.ts[0]), to: ymd(al.ts[al.ts.length - 1]), months,
+    rebalance: PARAMS.rebalance, costBps: PARAMS.costBps,
+    rfAnn: E.annualizedRf(rfRet, PPY, rfRet.length),
     bench: benchDaily ? toMonthly(al.ts, benchDaily).vals : null,
-    benchMetrics: benchDaily ? E.curveMetrics(benchDaily.filter((x) => x != null), PPY, PARAMS.rf) : null,
+    benchMetrics: benchDaily ? E.curveMetrics(benchDaily, PPY, rfRet) : null,
     schemes: {},
   };
   for (const [name, w] of Object.entries(schemeWeights)) {
-    const eqR = E.backtestPortfolio(al.prices, picks, w, true);
-    const eqB = E.backtestPortfolio(al.prices, picks, w, false);
+    const eqR = E.backtestPortfolio(al.prices, picks, w, { ...bopt, rebalance: PARAMS.rebalance });
+    const eqB = E.backtestPortfolio(al.prices, picks, w, { ...bopt, rebalance: 'none' });
     out.schemes[name] = {
       rebal: toMonthly(al.ts, eqR).vals, buyhold: toMonthly(al.ts, eqB).vals,
-      metrics: { rebal: E.curveMetrics(eqR, PPY, PARAMS.rf), buyhold: E.curveMetrics(eqB, PPY, PARAMS.rf) },
+      metrics: { rebal: E.curveMetrics(eqR, PPY, rfRet), buyhold: E.curveMetrics(eqB, PPY, rfRet) },
+      regression: benchRets ? {
+        rebal: E.regress(E.periodReturns(eqR), benchRets, rfRet, PPY),
+        buyhold: E.regress(E.periodReturns(eqB), benchRets, rfRet, PPY),
+      } : null,
     };
   }
   return out;
+}
+
+/**
+ * Finestra di backtest FISSA: gli ultimi `years` anni, intersecati con la
+ * disponibilita del benchmark. Prima il backtest partiva dall'intersezione delle
+ * date dei picks, cioe dall'IPO del titolo piu giovane: muovere uno slider
+ * cambiava il PERIODO oltre al paniere, rendendo i confronti privi di senso.
+ */
+function fixedWindow(years, benchEur, now) {
+  let from = Math.floor((now || Date.now()) / 1000) - Math.round(years * 365.25 * 86400);
+  if (benchEur && benchEur.ts.length && benchEur.ts[0] > from) from = benchEur.ts[0];
+  return from;
+}
+
+/** Titoli che coprono davvero la finestra (entro 15 giorni dall'inizio). */
+function coveringWindow(picks, eurW, from) {
+  return picks.filter((t) => eurW[t] && eurW[t].ts[0] <= from + 15 * 86400);
 }
 
 // ---- main ------------------------------------------------------------------
@@ -255,44 +315,73 @@ async function run(uname) {
   }
   log(`Serie convertite in EUR: ${Object.keys(eur).length}`);
 
-  // benchmark in EUR
+  // benchmark in EUR (TOTAL RETURN: vedi BENCHMARKS)
   let benchEur = null;
   const braw = await fetchSeries(cfg.benchmark);
   if (braw) { const be = toEur(braw, fx); if (be) benchEur = { ts: be.ts, px: be.px }; }
+  else log(`  WARN: benchmark ${cfg.benchmark} non disponibile`);
 
-  // metriche
-  const rows = metricsRows(eur);
+  // risk-free EUR (€STR capitalizzato)
+  let rfSer = null;
+  const rfRaw = await fetchSeries(RF_SYMBOL);
+  if (rfRaw) rfSer = { ts: rfRaw.ts, px: rfRaw.px };
+  else log(`  WARN: risk-free ${RF_SYMBOL} non disponibile, uso costante ${E.RF_DEFAULT}`);
 
-  // portafoglio canonico (full sample)
-  const canon = buildPortfolio(rows, eur, PARAMS);
-  let portfolioOut = { universe: uname, label: cfg.label, benchmark: cfg.benchmark, params: PARAMS };
+  // metriche (su tutta la storia disponibile: sono il criterio di SELEZIONE)
+  const rows = metricsRows(eur, rfSer);
+
+  let portfolioOut = { universe: uname, label: cfg.label, benchmark: cfg.benchmark,
+    benchmarkLabel: BENCHMARKS[cfg.benchmark] || cfg.benchmark, params: PARAMS };
 
   const schemeWeights = (port) => Object.fromEntries(SCHEMES.map((s) => [s, port.schemes[s].weights]));
 
+  // finestra di TEST fissa: ultimi minYears anni, non dipende dai picks
+  const isFrom = fixedWindow(PARAMS.minYears, benchEur);
+  const eurWin = sliceEur(eur, isFrom, Infinity);
+  log(`Finestra backtest in-sample: da ${ymd(isFrom)} (${PARAMS.minYears} anni, fissa)`);
+
+  const canon = buildPortfolio(rows, eurWin, PARAMS);
   if (canon) {
+    const covered = coveringWindow(canon.picks, eurWin, isFrom);
+    const dropped = canon.picks.length - covered.length;
     const sw = schemeWeights(canon);
-    const picksInfo = canon.picks.map((t, i) => {
+    const wMap = {}; SCHEMES.forEach((s) => { wMap[s] = {}; canon.picks.forEach((t, i) => (wMap[s][t] = sw[s][i])); });
+    const swCov = {};
+    for (const s of SCHEMES) {
+      const w = covered.map((t) => wMap[s][t]); const tot = w.reduce((a, b) => a + b, 0);
+      swCov[s] = w.map((x) => x / tot);
+    }
+    const stdMap = {}; canon.picks.forEach((t, i) => (stdMap[t] = canon.schemes.resampled.std[i]));
+    const picksInfo = covered.map((t, i) => {
       const r = rows.find((x) => x.t === t);
-      return { t, wEqual: sw.equal[i], wInvvol: sw.invvol[i], wResampled: sw.resampled[i],
-        wstd: canon.schemes.resampled.std[i], cagr: r.cagr, vol: r.vol, mdd: r.mdd,
+      return { t, wEqual: swCov.equal[i], wInvvol: swCov.invvol[i], wResampled: swCov.resampled[i],
+        wstd: stdMap[t], cagr: r.cagr, vol: r.vol, mdd: r.mdd,
         min5y: r.min5y, r2: r.r2, reg: r.reg, mar: r.mar, quality: r.quality };
     }); // ordine = selezione per quality (gia ordinato da screen)
-    const bt = backtestSchemes(canon.picks, sw, eur, benchEur);
+    const bt = covered.length >= 2 ? backtestSchemes(covered, swCov, eurWin, benchEur, rfSer) : null;
     portfolioOut.canonical = { picks: picksInfo, scenarios: canon.schemes.resampled.scenarios,
-      skipped: canon.scr.skipped, passed: canon.scr.passed, backtest: bt };
-    const ic = bt && bt.schemes.equal.metrics.rebal.cagr;
-    log(`Canonico: ${canon.picks.length} titoli | in-sample equipeso CAGR ${(ic * 100).toFixed(1)}%`);
+      skipped: canon.scr.skipped, passed: canon.scr.passed, dropped, window: ymd(isFrom), backtest: bt };
+    if (bt) {
+      const m = bt.schemes.equal.metrics.rebal, g = bt.schemes.equal.regression;
+      log(`Canonico: ${covered.length} titoli${dropped ? ` (${dropped} senza copertura finestra)` : ''} | ` +
+        `IS equipeso CAGR ${(m.cagr * 100).toFixed(1)}% vs bench ` +
+        `${bt.benchMetrics ? (bt.benchMetrics.cagr * 100).toFixed(1) + '%' : 'n/d'}` +
+        (g && g.rebal ? ` | beta ${g.rebal.beta.toFixed(2)} alfa ${(g.rebal.alpha * 100).toFixed(1)}% (t ${g.rebal.alphaT.toFixed(2)})` : ''));
+    } else log(`Canonico: solo ${covered.length} titoli coprono la finestra`);
   } else log('Canonico: nessun titolo supera i filtri');
 
   // OUT-OF-SAMPLE: screen+pesi su pre-cutoff, test sul post-cutoff
   const cutoff = Math.floor(Date.now() / 1000) - PARAMS.oosCutoffYears * 365 * 86400;
   const eurPre = sliceEur(eur, 0, cutoff);
   const eurPost = sliceEur(eur, cutoff, Infinity);
-  const rowsPre = metricsRows(eurPre);
+  const rowsPre = metricsRows(eurPre, rfSer);
   const oosParams = { ...PARAMS, minYears: PARAMS.oosMinYears };
   const oos = buildPortfolio(rowsPre, eurPre, oosParams);
   if (oos) {
-    const validPicks = oos.picks.filter((t) => eurPost[t] && eurPost[t].px.length > 60);
+    // la finestra post-cutoff e gia fissa; si richiede pero copertura PIENA,
+    // altrimenti l'intersezione di alignPicks accorcia il test per tutti
+    const postFrom = fixedWindow(PARAMS.oosCutoffYears, benchEur);
+    const validPicks = coveringWindow(oos.picks, eurPost, postFrom);
     if (validPicks.length >= 2) {
       const swPre = schemeWeights(oos);
       // restringe e rinormalizza i pesi di ogni schema ai titoli con dati post-cutoff
@@ -302,14 +391,19 @@ async function run(uname) {
         let w = validPicks.map((t) => map[t]); const tot = w.reduce((a, b) => a + b, 0);
         swValid[s] = w.map((x) => x / tot);
       }
-      const bt = backtestSchemes(validPicks, swValid, eurPost, benchEur);
+      const bt = backtestSchemes(validPicks, swValid, eurPost, benchEur, rfSer);
       portfolioOut.oos = { cutoff: ymd(cutoff), minYears: PARAMS.oosMinYears,
+        dropped: oos.picks.length - validPicks.length,
         picks: validPicks.map((t, i) => ({ t, wEqual: swValid.equal[i],
           wInvvol: swValid.invvol[i], wResampled: swValid.resampled[i] })), backtest: bt };
-      if (bt) log(`OOS (post ${ymd(cutoff)}): ${validPicks.length} titoli | equipeso ` +
-        `CAGR ${(bt.schemes.equal.metrics.rebal.cagr * 100).toFixed(1)}% vs bench ` +
-        `${bt.benchMetrics ? (bt.benchMetrics.cagr * 100).toFixed(1) + '%' : 'n/d'}`);
-    } else log('OOS: troppi pochi titoli con dati post-cutoff');
+      if (bt) {
+        const g = bt.schemes.equal.regression;
+        log(`OOS (post ${ymd(cutoff)}): ${validPicks.length} titoli | equipeso ` +
+          `CAGR ${(bt.schemes.equal.metrics.rebal.cagr * 100).toFixed(1)}% vs bench ` +
+          `${bt.benchMetrics ? (bt.benchMetrics.cagr * 100).toFixed(1) + '%' : 'n/d'}` +
+          (g && g.rebal ? ` | beta ${g.rebal.beta.toFixed(2)} alfa ${(g.rebal.alpha * 100).toFixed(1)}% (t ${g.rebal.alphaT.toFixed(2)})` : ''));
+      }
+    } else log('OOS: troppi pochi titoli con copertura piena del post-cutoff');
   } else log('OOS: nessun titolo supera i filtri pre-cutoff');
 
   // curve mensili EUR per il pool eleggibile (per ribilanciamenti custom nel browser)
@@ -344,13 +438,15 @@ async function run(uname) {
   return { uname, count: rows.length, eligible: eligible.length };
 }
 
-// benchmark globali, scelti dall'app in base alla selezione di universi
+// Benchmark globali, scelti dall'app in base alla selezione di universi.
+// TUTTI total return: i titoli usano l'adjusted close (dividendi reinvestiti),
+// quindi confrontarli con un indice price-only regala 1-3 pp/anno alla strategia.
 const BENCHMARKS = {
-  '^GSPC': 'S&P 500',
-  '^IXIC': 'NASDAQ Composite',
-  '^NYA': 'NYSE Composite',
-  '^STOXX': 'STOXX Europe 600',
-  'ACWI': 'MSCI ACWI (mondo)',
+  '^SP500TR': 'S&P 500 Total Return',
+  '^XCMP': 'NASDAQ Composite Total Return',
+  'VTI': 'US Total Market TR (proxy NYSE)',
+  'EXSA.DE': 'STOXX Europe 600 TR',
+  'ACWI': 'MSCI ACWI TR (mondo)',
 };
 async function generateBenchmarks() {
   log('Genero benchmarks.json...');
@@ -367,9 +463,15 @@ async function generateBenchmarks() {
     const m = toMonthly(e.ts, e.px);
     out.series[sym] = { label: BENCHMARKS[sym], s: m.months[0], p: m.vals.map((x) => +x.toFixed(4)) };
   }
+  // serie risk-free EUR (€STR capitalizzato): serve al browser per Sharpe/alfa
+  const rfRaw = await fetchSeries(RF_SYMBOL);
+  if (rfRaw) {
+    const m = toMonthly(rfRaw.ts, rfRaw.px);
+    out.rf = { symbol: RF_SYMBOL, label: 'Risk-free EUR (€STR)', s: m.months[0], p: m.vals.map((x) => +x.toFixed(4)) };
+  } else log(`  WARN: risk-free ${RF_SYMBOL} non disponibile`);
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(path.join(DATA_DIR, 'benchmarks.json'), JSON.stringify(out));
-  log(`Scritto benchmarks.json (${Object.keys(out.series).length} indici)`);
+  log(`Scritto benchmarks.json (${Object.keys(out.series).length} indici${out.rf ? ' + risk-free' : ''})`);
 }
 
 (async () => {

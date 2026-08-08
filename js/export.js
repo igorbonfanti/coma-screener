@@ -6,7 +6,8 @@
 
   function toExcel(ctx) {
     if (typeof XLSX === 'undefined') { alert('Libreria Excel non caricata'); return; }
-    const { universe, scheme, screenRows, portfolioPicks, isMetrics, oosMetrics } = ctx;
+    const { universe, scheme, screenRows, portfolioPicks, isMetrics, oosMetrics,
+      isReg, oosReg, bench } = ctx;
     const wb = XLSX.utils.book_new();
 
     // 1) Portafoglio (con pesi dello schema selezionato)
@@ -17,10 +18,18 @@
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(port), 'Portafoglio');
 
-    // 2) Metriche backtest
-    const mrow = (lab, m) => (m ? { Periodo: lab, 'CAGR %': pct(m.rebal.cagr), 'Vol %': pct(m.rebal.vol),
-      'MaxDD %': pct(m.rebal.mdd), Sharpe: r3(m.rebal.sharpe), MAR: r3(m.rebal.mar) } : null);
-    const mets = [mrow('In-sample', isMetrics), mrow('Out-of-sample', oosMetrics)].filter(Boolean);
+    // 2) Metriche backtest + regressione sul benchmark (alfa/beta/t-stat)
+    const mrow = (lab, m, g) => (m ? { Periodo: lab, 'CAGR %': pct(m.rebal.cagr), 'Vol %': pct(m.rebal.vol),
+      'MaxDD %': pct(m.rebal.mdd), Sharpe: r3(m.rebal.sharpe), Sortino: r3(m.rebal.sortino),
+      MAR: r3(m.rebal.mar), 'Turnover %/anno': pct(m.rebal.turnover),
+      Benchmark: bench || null, Beta: g && g.rebal ? r3(g.rebal.beta) : null,
+      'Alfa %': g && g.rebal ? pct(g.rebal.alpha) : null,
+      't-stat alfa': g && g.rebal ? r3(g.rebal.alphaT) : null,
+      'Alfa significativo': g && g.rebal ? (Math.abs(g.rebal.alphaT) >= 2 ? 'si' : 'NO') : null,
+      'Tracking error %': g && g.rebal ? pct(g.rebal.te) : null,
+      'Information ratio': g && g.rebal ? r3(g.rebal.ir) : null } : null);
+    const mets = [mrow('In-sample (circolare)', isMetrics, isReg),
+      mrow('Out-of-sample', oosMetrics, oosReg)].filter(Boolean);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mets), 'Backtest');
 
     // 3) Screening completo (tutti i passati)
