@@ -1,25 +1,25 @@
 {
- "updated": "2026-08-17T06:05:35.588Z",
+ "updated": "2026-08-24T06:08:42.099Z",
  "universes": {
   "SP500": {
    "count": 503,
    "eligible": 389,
-   "updated": "2026-08-17T06:05:35.588Z"
+   "updated": "2026-08-24T06:08:42.099Z"
   },
   "STOXX600": {
-   "count": 214,
-   "eligible": 109,
-   "updated": "2026-08-17T06:05:35.588Z"
+   "count": 223,
+   "eligible": 111,
+   "updated": "2026-08-24T06:08:42.099Z"
   },
   "NASDAQ": {
-   "count": 3708,
-   "eligible": 768,
-   "updated": "2026-08-17T06:05:35.588Z"
+   "count": 3746,
+   "eligible": 770,
+   "updated": "2026-08-24T06:08:42.099Z"
   },
   "NYSE": {
-   "count": 2328,
-   "eligible": 936,
-   "updated": "2026-08-17T06:05:35.588Z"
+   "count": 2324,
+   "eligible": 937,
+   "updated": "2026-08-24T06:08:42.099Z"
   }
  }
 }
