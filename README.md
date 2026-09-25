@@ -54,5 +54,16 @@ node scripts/_test_entry.js          # test drawdown e strategie d'ingresso
 node scripts/_test_ui.js --show      # smoke test screener (jsdom)
 node scripts/_test_entry_ui.js       # smoke test pagina "Come entrare"
 node scripts/fetch_data.js SP500     # rigenera un universo
+node scripts/factors.js              # fattori: scarica solo se le fonti sono cambiate
+node scripts/factors.js --force      # ... oppure riscarica comunque
 node scripts/_serve.js               # preview locale su :8099
 ```
+
+### Aggiornamento automatico
+
+La [GitHub Action](.github/workflows/update-data.yml) gira ogni lunedì e fa due cose:
+
+1. **Fattori** (`scripts/factors.js`). Escono una volta al mese, quindi lo script chiede prima alle fonti — con una richiesta `HEAD` — se data di modifica e lunghezza sono cambiate, e scarica solo in quel caso. Anche quando riscarica, riscrive il file solo se il *contenuto* è diverso: altrimenti un `updated` nuovo produrrebbe un commit fasullo ogni settimana. Se fallisce non blocca il resto, e se le fonti tacciono da più di tre mesi lo dice nel log.
+2. **Prezzi e metriche** (`scripts/fetch_data.js`) per i tre universi.
+
+Il commit finale parte solo se qualcosa in `data/` è davvero cambiato. Da *Actions → Update data → Run workflow* si può forzare il riscaricamento dei fattori.
