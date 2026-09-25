@@ -3,135 +3,180 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Coma Screener — Aziende da Coma</title>
-<meta name="theme-color" content="#fbf7f1">
+<title>Coma Screener &mdash; compounder di lungo periodo</title>
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.json">
-<script>(function(){try{var t=localStorage.getItem('antigravity-theme')||localStorage.getItem('coma-theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/terminale.css">
+<link rel="stylesheet" href="css/coma.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-<link rel="stylesheet" href="css/coma.css">
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="brand">
-      <div class="logo" aria-hidden="true">C</div>
-      <div>
-        <h1>Coma Screener</h1>
-        <div class="sub">Compounder di lungo periodo, validati out-of-sample</div>
-      </div>
-    </div>
-    <div class="masthead-r">
-      <a class="icon-btn" id="link-entry" href="entry.html" title="Analizza quando conviene entrare sui titoli selezionati: ribassi, PAC o rottura dei massimi">Come entrare →</a>
-      <span class="dateline" id="updated">…</span>
-      <button id="theme-toggle" class="icon-btn" title="Cambia tema chiaro / scuro" aria-label="Cambia tema">◐</button>
-    </div>
+<div class="term" id="term">
+
+  <header class="cmdbar">
+    <h1 class="brand">COMA&middot;SCREEN</h1>
+    <form class="cmd" id="cmd-form" onsubmit="return false">
+      <span class="prompt" aria-hidden="true">&gt;</span>
+      <input id="cmd-input" aria-label="Comando" placeholder="Comando: un ticker, GUIDA &middot; poi Invio">
+      <button class="go" type="submit">GO</button>
+    </form>
+    <span class="clock">DATI <b id="updated">&ndash;</b><span class="fresh ok" id="fresh">AGGIORNATO</span></span>
+    <span class="tools">
+      <button type="button" class="tool" id="btn-help">? GUIDA</button>
+      <button type="button" class="tool" id="cvd-toggle" aria-pressed="false" title="Tema per daltonici: su e gi&ugrave; diventano azzurro e rosso">CVD</button>
+    </span>
   </header>
 
-  <div class="toolbar">
-    <div class="usel-group" id="universe-select"></div>
-  </div>
-
-  <div class="banner" id="caveat">
-    <div>Lo screening usa i titoli <b>oggi</b> nell'indice: per costruzione seleziona solo i <b>sopravvissuti</b>, e il bias resta <b>anche nell'out-of-sample</b>, perché quell'elenco nel passato non era conoscibile. Il backtest <b>in-sample</b> è ottimistico e circolare. Guarda l'<b>alfa out-of-sample e il suo t-stat</b>: un CAGR alto con beta basso non è bravura, e con <b>t sotto 2 l'alfa è indistinguibile dal caso</b>. Non è una raccomandazione d'investimento.</div>
-    <button class="x" id="caveat-hide" aria-label="Nascondi l'avviso metodologico">×</button>
-  </div>
-  <button class="banner-mini" id="caveat-show" hidden>Mostra l'avviso metodologico</button>
-
-  <div id="verdict"></div>
-
-  <div class="kpi-group">
-    <div class="kpi-head">
-      <span class="t">Validazione onesta</span>
-      <span class="h">selezione fatta nel passato, testata in avanti — è il numero su cui basarsi <span class="info" title="Out-of-sample: lo screening viene rifatto usando solo i dati fino a ~7 anni fa, e il portafoglio così ottenuto viene testato sul periodo successivo, mai visto in fase di selezione.">i</span></span>
+  <nav aria-label="Viste">
+    <div class="fnkeys">
+      <a href="index.html" aria-current="page">1 SCREENER</a>
+      <a href="entry.html" id="link-entry">2 INGRESSI</a>
     </div>
-    <div class="kpis" id="kpis"></div>
-  </div>
+  </nav>
 
-  <div class="kpi-group secondary">
-    <div class="kpi-head">
-      <span class="t">Riferimento in-sample</span>
-      <span class="h">ottimistico e circolare: selezione e test sullo stesso periodo <span class="info" title="In-sample significa che i titoli sono stati scelti sapendo già come sarebbero andati. Serve solo come limite superiore teorico, mai come previsione.">i</span></span>
-    </div>
-    <div class="kpis" id="kpis-is"></div>
-  </div>
-
-  <section class="sec">
-    <h2>Backtest <span class="pill" id="bench-name"></span></h2>
-    <div class="desc">Il benchmark si adatta agli universi selezionati ed è sempre <b>total return</b> (dividendi reinvestiti), come le serie dei titoli. Ribilanciamento annuale con 0.15% di costi sul controvalore scambiato.</div>
-    <div class="seg-wrap" style="margin-bottom:20px">
-      <span class="seg-lab">Periodo</span>
-      <div class="seg" id="seg-period" role="group" aria-label="Periodo del backtest">
-        <button data-v="oos" class="on" aria-pressed="true" title="Out-of-sample: selezione su dati passati (fino a ~7 anni fa) testata sul periodo successivo. Il risultato più onesto.">Out-of-sample</button>
-        <button data-v="insample" aria-pressed="false" title="In-sample: selezione e test sullo stesso intero storico. Sempre ottimistico (circolare): solo riferimento.">In-sample</button>
-      </div>
-      <span class="seg-lab">Pesi</span>
+  <div class="filters">
+    <div class="ctl" id="universe-select"></div>
+    <div class="ctl"><span>Pesi</span>
       <div class="seg" id="seg-scheme" role="group" aria-label="Schema di pesatura">
-        <button data-v="equal" class="on" aria-pressed="true" title="Equipeso: stesso peso a ogni titolo (1/N). Il più robusto, nessuna stima richiesta.">Equipeso</button>
-        <button data-v="invvol" aria-pressed="false" title="Risk-parity: peso inversamente proporzionale alla volatilità, così ogni titolo contribuisce ugualmente al rischio.">Risk-parity</button>
-        <button data-v="resampled" aria-pressed="false" title="Max-Sharpe: ottimizza rischio/rendimento (resampled, block bootstrap). Cerca i pesi migliori ma concentra di più.">Max-Sharpe</button>
-      </div>
-      <span class="seg-lab">Gestione</span>
-      <div class="seg" id="seg-mode" role="group" aria-label="Modalità di gestione">
-        <button data-v="rebal" class="on" aria-pressed="true" title="Ritorno ai pesi target una volta l'anno, pagando 0.15% sul controvalore scambiato.">Ribilanciato</button>
-        <button data-v="buyhold" aria-pressed="false" title="Comprato una volta e lasciato correre: i pesi driftano, zero costi. Coerente con la tesi 'compra e dimentica'.">Buy &amp; hold</button>
+        <button type="button" data-v="equal" aria-pressed="true" title="Equipeso: stesso peso a ogni titolo. Il pi&ugrave; robusto, nessuna stima richiesta.">EQUIPESO</button>
+        <button type="button" data-v="invvol" aria-pressed="false" title="Risk-parity: peso inversamente proporzionale alla volatilit&agrave;, cos&igrave; ogni titolo contribuisce ugualmente al rischio.">RISK-PARITY</button>
+        <button type="button" data-v="resampled" aria-pressed="false" title="Max-Sharpe resampled con block bootstrap: cerca i pesi migliori ma concentra di pi&ugrave;.">MAX-SHARPE</button>
       </div>
     </div>
-    <div class="row">
-      <div class="col">
-        <div class="chart-box"><canvas id="equity" aria-label="Curva di crescita del portafoglio contro il benchmark" role="img"></canvas></div>
-        <div class="chart-cap">Crescita di 100 € — scala logaritmica: pendenze uguali significano rendimenti uguali</div>
-      </div>
-      <div class="col">
-        <div class="chart-box"><canvas id="drawdown" aria-label="Drawdown del portafoglio contro il benchmark" role="img"></canvas></div>
-        <div class="chart-cap">Distanza dal massimo precedente — quanto si è dovuto sopportare per arrivarci</div>
+    <div class="ctl"><span>Gestione</span>
+      <div class="seg" id="seg-mode" role="group" aria-label="Modalit&agrave; di gestione">
+        <button type="button" data-v="rebal" aria-pressed="true" title="Ritorno ai pesi target una volta l&rsquo;anno, pagando 0,15% sul controvalore scambiato.">RIBILANCIATO</button>
+        <button type="button" data-v="buyhold" aria-pressed="false" title="Comprato una volta e lasciato correre: i pesi driftano, zero costi di ribilanciamento.">BUY &amp; HOLD</button>
       </div>
     </div>
-  </section>
+  </div>
 
-  <section class="sec">
-    <h2>Portafoglio <span class="pill" id="port-n"></span></h2>
-    <div class="desc">I titoli che superano tutte le soglie, ordinati per peso. I pesi seguono lo schema selezionato sopra (cap 20% / floor 2% per titolo). La colonna <b>Curva</b> mostra l'andamento sulla finestra di test: è ciò che la metodologia chiama "regolarità".</div>
-    <div class="tbl-scroll"><table id="port-tbl"></table></div>
-  </section>
+  <main class="view">
 
-  <section class="sec">
-    <h2>Screening <button class="upreset" id="btn-reset" style="margin-left:auto" title="Ripristina tutte le soglie ai valori di default">↺ Reset filtri</button></h2>
-    <div class="desc">Muovi le soglie: il filtro gira nel browser sulle metriche già calcolate, istantaneo. L'istogramma sopra ogni slider mostra come è distribuito l'universo e quanto stai tagliando; l'imbuto sotto dice quale soglia sta davvero decidendo il portafoglio.</div>
-    <div class="ctrls" id="screen-ctrls"></div>
-    <div id="screen-summary"></div>
-    <div class="tbl-scroll"><table id="screen-tbl"></table></div>
-  </section>
-
-  <section class="sec" id="build-card">
-    <h2>Costruisci &amp; salva</h2>
-    <div class="desc">Clicca ★ nella tabella screening per aggiungere titoli a un basket custom. Basket vuoto = usa il portafoglio canonico corrente. I pesi seguono lo schema selezionato sopra.</div>
-    <div id="basket-chips"></div>
-    <div id="basket-metrics" class="kpis" style="margin:16px 0 0" aria-live="polite"></div>
-    <div class="build-actions">
-      <input id="snap-note" placeholder="Nota (opzionale) — es. revisione giugno">
-      <button class="btn" id="btn-save">Salva snapshot</button>
-      <button class="btn ghost" id="btn-export">Esporta Excel</button>
-      <span id="save-status" class="muted"></span>
+    <div class="panel" style="margin-bottom:12px">
+      <div class="ph"><h2>Verdetto out-of-sample</h2><span class="meta" id="verdict-meta"></span></div>
+      <div class="pb" id="verdict"></div>
     </div>
-    <div style="margin-top:14px">
-      <div class="sublab">Snapshot salvati</div>
-      <div id="snapshots" class="muted">…</div>
-    </div>
-  </section>
 
-  <div class="foot">coma-screener <b>v1.5.0</b> · dati Yahoo Finance, total return in EUR · metodologia "Aziende da Coma" (M. Rea) · uso personale<br>
-    Benchmark total return · ribilanciamento annuale con costi 0.15% · risk-free €STR · alfa, beta e t-stat sulla regressione col benchmark<br>
-    <span class="muted">Backtest lordo di imposte. Non è una raccomandazione d'investimento.</span></div>
+    <div class="kpis" id="kpis"></div>
+
+    <p class="note" style="margin:-4px 0 6px">Riferimento in-sample: selezione e test sullo stesso periodo, quindi circolare. Serve come limite superiore teorico, mai come previsione.</p>
+    <div class="kpis" id="kpis-is"></div>
+
+    <div class="grid-side">
+      <div class="stack">
+
+        <div class="panel">
+          <div class="ph"><h2>Curva del portafoglio</h2><span class="meta" id="bench-name"></span></div>
+          <div class="pb" style="padding-bottom:0">
+            <div class="ctl" style="margin-bottom:8px"><span>Periodo</span>
+              <div class="seg" id="seg-period" role="group" aria-label="Periodo del backtest">
+                <button type="button" data-v="oos" aria-pressed="true" title="Selezione su dati fino a circa 7 anni fa, testata sul periodo successivo. Il risultato pi&ugrave; onesto.">OUT-OF-SAMPLE</button>
+                <button type="button" data-v="insample" aria-pressed="false" title="Selezione e test sullo stesso storico. Circolare: solo riferimento.">IN-SAMPLE</button>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <div class="chart-box"><canvas id="equity" role="img" aria-label="Crescita di 100 euro, portafoglio contro benchmark"></canvas></div>
+                <p class="note" style="margin-top:6px">Crescita di 100 &euro;, scala logaritmica: pendenze uguali significano rendimenti uguali.</p>
+              </div>
+              <div>
+                <div class="chart-box"><canvas id="drawdown" role="img" aria-label="Drawdown del portafoglio contro il benchmark"></canvas></div>
+                <p class="note" style="margin-top:6px">Distanza dal massimo precedente: quanto si &egrave; dovuto sopportare per arrivarci.</p>
+              </div>
+            </div>
+          </div>
+          <div class="legend">
+            <span><i class="kl" style="background:var(--ink)"></i>Portafoglio</span>
+            <span><i class="kl" style="background:var(--amber)"></i>Benchmark total return</span>
+            <span class="muted">Ribilanciamento annuale con 0,15% di costi sul controvalore scambiato.</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="ph"><h2>Portafoglio</h2><span class="meta" id="port-n"></span></div>
+          <div class="tscroll"><table class="t" id="port-tbl"></table></div>
+          <p class="note" style="padding:6px 10px">La colonna <b>Curva</b> mostra l&rsquo;andamento sulla finestra di test: &egrave; ci&ograve; che la metodologia chiama regolarit&agrave;. Pesi con tetto 20% e minimo 2% per titolo.</p>
+        </div>
+
+        <div class="panel">
+          <div class="ph"><h2>Screening</h2><span class="meta"><button type="button" class="tool mini" id="btn-reset" title="Riporta tutte le soglie ai valori di partenza">&#8634; AZZERA SOGLIE</button></span></div>
+          <div class="ctls" id="screen-ctrls"></div>
+          <div id="screen-summary"></div>
+          <div class="tscroll"><table class="t" id="screen-tbl"></table></div>
+          <p class="note" style="padding:6px 10px">L&rsquo;istogramma sopra ogni cursore mostra come &egrave; distribuito l&rsquo;universo: in ambra la parte che supera la soglia. L&rsquo;imbuto dice quale filtro sta davvero decidendo il portafoglio.</p>
+        </div>
+
+        <div class="panel" id="build-card">
+          <div class="ph"><h2>Costruisci e salva</h2><span class="meta">basket personale</span></div>
+          <div class="pb">
+            <p class="note" style="margin-bottom:8px">Segna un titolo con <b>&#9733;</b> nella tabella dello screening per metterlo nel basket. Basket vuoto: vale il portafoglio corrente.</p>
+            <div class="chips" id="basket-chips"></div>
+            <div class="kpis" id="basket-metrics" style="margin:10px 0 0" aria-live="polite"></div>
+            <div class="build-actions">
+              <input id="snap-note" placeholder="Nota (facoltativa), es. revisione di giugno">
+              <button type="button" class="tool mini" id="btn-save">SALVA SNAPSHOT</button>
+              <button type="button" class="tool mini" id="btn-export">ESPORTA EXCEL</button>
+              <span id="save-status" class="muted"></span>
+            </div>
+          </div>
+          <div class="pb" style="border-top:1px solid var(--rule)">
+            <div class="ctl" style="margin-bottom:6px"><span>Snapshot salvati</span></div>
+            <div id="snapshots" class="note">&hellip;</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="stack">
+        <div class="panel" id="caveat">
+          <div class="ph"><h2>Da tenere presente</h2><span class="meta">limiti del risultato</span></div>
+          <div class="pb">
+            <div class="acard"><div class="acard-h"><span class="sym">SURVIVORSHIP</span></div>
+              <div class="acard-t">Lo screening parte dai titoli <b>oggi</b> nell&rsquo;indice: per costruzione seleziona i sopravvissuti. Il bias resta anche nell&rsquo;out-of-sample, perch&eacute; quell&rsquo;elenco nel passato non era conoscibile.</div></div>
+            <div class="acard"><div class="acard-h"><span class="sym">UN SOLO FOLD</span></div>
+              <div class="acard-t">La validazione usa un unico taglio a 7 anni: un solo percorso non distingue bravura da fortuna. Guarda il t-stat, non il CAGR.</div></div>
+            <div class="acard"><div class="acard-h"><span class="sym">SOGLIA t = 2</span></div>
+              <div class="acard-t">Sotto |t| = 2 l&rsquo;alfa non &egrave; distinguibile dal caso. Un CAGR alto con beta basso non &egrave; bravura: &egrave; meno mercato.</div></div>
+            <div class="acard"><div class="acard-h"><span class="sym">IMPOSTE</span></div>
+              <div class="acard-t">Il backtest &egrave; lordo di ritenute sui dividendi, capital gain e costi di cambio. Su un portafoglio ad alto dividendo il carico reale &egrave; sensibile.</div></div>
+            <div class="acard" style="border-bottom:0"><div class="acard-h"><span class="sym">DATI DAL 2003</span></div>
+              <div class="acard-t">Le serie in euro partono da dicembre 2003, limite del cambio EUR/USD sulla fonte: il filtro sul quinquennio non vede la bolla dot-com.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="statusline">
+    <span>Dati di fine giornata: Yahoo Finance, total return convertito in euro &middot; benchmark total return &middot; risk-free &euro;STR</span>
+    <span>dati generati il <span id="gen-date">&ndash;</span></span>
+    <span class="discl">Strumento di studio: non &egrave; consulenza finanziaria n&eacute; una raccomandazione di investimento. I rendimenti passati non indicano quelli futuri.</span>
+  </footer>
 </div>
 
+<dialog class="modal-card" id="help-dlg">
+  <div class="ph"><h2>Guida</h2><button type="button" class="modal-close" id="help-close" aria-label="Chiudi la guida">&times;</button></div>
+  <div class="pb">
+    <p><b>Cosa fa.</b> Cerca titoli la cui curva di prezzo cresce in modo regolare sul lungo periodo: alta linearit&agrave; in scala logaritmica, mai un quinquennio negativo, drawdown contenuti.</p>
+    <p><b>Il numero che conta.</b> L&rsquo;alfa out-of-sample con il suo t-stat. L&rsquo;alfa &egrave; l&rsquo;extra-rendimento che resta dopo aver tolto la parte spiegata dal mercato; il t-stat dice se &egrave; distinguibile dal caso. <b>Sotto |t| = 2 non lo &egrave;.</b></p>
+    <p><b>Comandi.</b> Scrivi un ticker per cercarlo nello screening, oppure GUIDA. Il pulsante CVD passa ai colori per daltonici.</p>
+    <ul>
+      <li><b>Equipeso</b>: stesso peso a ogni titolo, nessuna stima richiesta.</li>
+      <li><b>Risk-parity</b>: peso inverso alla volatilit&agrave;.</li>
+      <li><b>Max-Sharpe</b>: pesi ottimizzati su campioni block-bootstrap.</li>
+    </ul>
+    <p class="note">Il confronto &egrave; sempre contro un benchmark <b>total return</b>: le serie dei titoli incassano i dividendi, e un indice di solo prezzo regalerebbe 1&ndash;3 punti l&rsquo;anno alla strategia.</p>
+  </div>
+</dialog>
+
 <script src="scripts/engine.js"></script>
+<script src="js/fmt.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/live.js"></script>

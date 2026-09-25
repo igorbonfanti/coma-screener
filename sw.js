@@ -1,14 +1,21 @@
 /* Service worker coma-screener — app shell cache-first, dati network-first. */
-// v8: pagina "Come entrare" (entry.html) e CSS condiviso fra le due pagine.
+// v9: design system "Terminale ambra" (terminale.css + font IBM Plex locali).
 // Alzare SEMPRE la versione quando cambia un file in SHELL: la shell e'
 // cache-first, quindi senza un nome nuovo i client gia' installati
 // continuerebbero a vedere la versione precedente.
-const VERSION = 'coma-v8';
+const VERSION = 'coma-v9';
 const SHELL = [
   './', './index.html', './entry.html', './manifest.json', './icon.svg',
-  './css/coma.css',
+  './css/terminale.css', './css/coma.css',
+  './fonts/ibm-plex-mono-latin-400-normal.woff2',
+  './fonts/ibm-plex-mono-latin-500-normal.woff2',
+  './fonts/ibm-plex-mono-latin-600-normal.woff2',
+  './fonts/ibm-plex-sans-condensed-latin-400-normal.woff2',
+  './fonts/ibm-plex-sans-condensed-latin-500-normal.woff2',
+  './fonts/ibm-plex-sans-condensed-latin-600-normal.woff2',
+  './fonts/ibm-plex-sans-condensed-latin-700-normal.woff2',
   './scripts/engine.js', './scripts/entry.js',
-  './js/ui.js', './js/charts.js', './js/live.js',
+  './js/fmt.js', './js/ui.js', './js/charts.js', './js/live.js',
   './js/store.js', './js/export.js', './js/app.js', './js/entry-app.js',
   './auth-opzionale.js',
 ];

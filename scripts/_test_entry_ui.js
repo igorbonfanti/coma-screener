@@ -21,7 +21,7 @@ window.fetch = (url) => {
   catch (e) { return Promise.reject(new Error('404 ' + p)); }
 };
 
-for (const f of ['scripts/engine.js', 'scripts/entry.js', 'js/ui.js', 'js/entry-app.js']) {
+for (const f of ['scripts/engine.js', 'scripts/entry.js', 'js/fmt.js', 'js/ui.js', 'js/entry-app.js']) {
   try { window.eval(read(f)); } catch (e) { errors.push(f + ': ' + e.message); }
 }
 window.document.dispatchEvent(new window.Event('DOMContentLoaded'));
@@ -35,6 +35,7 @@ setTimeout(() => {
   // verdetto
   ck(!!$('#verdict .verdict'), 'verdetto renderizzato');
   ck(/subito|aspettare/i.test($('#verdict').textContent), 'verdetto esprime un giudizio');
+  ck(!!$('#verdict').querySelector('.st'), 'il verdetto usa un badge di stato');
   ck($('#verdict').textContent.includes('%'), 'verdetto cita i numeri');
 
   // KPI ribassi, sempre con il confronto sull'universo
@@ -46,6 +47,8 @@ setTimeout(() => {
   ck(rows('#cmp-tbl') >= 5, 'tabella strategie popolata: ' + rows('#cmp-tbl'));
   ck($('#cmp-tbl').textContent.includes('riferimento'), 'riga di riferimento marcata');
   ck($('#cmp-n').textContent.includes('date di partenza'), 'conteggio partenze mostrato: ' + $('#cmp-n').textContent);
+  ck($('#cmp-tbl').querySelectorAll('.bullet').length >= 3, 'barre bullet con la soglia del 50%');
+  ck($('#cmp-tbl').querySelector('.bullet .tick'), 'la soglia e marcata dentro la barra');
   const cmpTxt = $('#cmp-tbl').textContent;
   ck(cmpTxt.includes('Ribasso −20%') && cmpTxt.includes('Rottura massimi'), 'strategie attese presenti');
 
@@ -58,6 +61,7 @@ setTimeout(() => {
   ck($('#cond-tbl').textContent.includes('trend'), 'bucket per z-score mostrati');
   $('#seg-horizon').querySelector('[data-v="1"]').click();
   ck($('#cond-n').textContent.includes('1 anno'), 'orizzonte 1 anno al singolare: ' + $('#cond-n').textContent);
+  ck(/\d,\d/.test($('#cond-tbl').textContent), 'numeri con la virgola decimale');
 
   // titolo per titolo
   ck(rows('#single-tbl') >= 5, 'tabella per titolo popolata');

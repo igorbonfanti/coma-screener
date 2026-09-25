@@ -3,9 +3,11 @@
   'use strict';
   const E = window.ComaEngine, CH = window.ComaCharts, LIVE = window.ComaLive;
   const $ = (s) => document.querySelector(s);
-  const pct = (x, d = 1) => (x == null || isNaN(x) ? '–' : (x * 100).toFixed(d) + '%');
-  const num = (x, d = 2) => (x == null || isNaN(x) ? '–' : (+x).toFixed(d));
-  const cls = (x) => (x >= 0 ? 'pos' : 'neg');
+  // numeri all'italiana: virgola, meno tipografico, "+" sulle variazioni (js/fmt.js)
+  const F = window.ComaFmt;
+  const pct = (x, d = 1) => F.pct(x, d);
+  const num = (x, d = 2) => F.num(x, d);
+  const delta = (x, d = 1) => F.delta(x, d);
   const wKey = { equal: 'wEqual', invvol: 'wInvvol', resampled: 'wResampled' };
   const schemeLabel = { equal: 'Equipeso', invvol: 'Risk-parity', resampled: 'Max-Sharpe' };
 
@@ -26,7 +28,8 @@
   const T = { ...DEFAULT_T };
   let state = { universes: ['SP500'], loaded: {}, merged: null, params: null, benchmarks: null,
     live: null, oos: null, period: 'oos', scheme: 'equal', mode: 'rebal',
-    sortKey: 'quality', sortDir: -1, basket: new Set(), build: null, lastScreen: [] };
+    sortKey: 'quality', sortDir: -1, basket: new Set(), build: null, lastScreen: [],
+    hl: null, hist: null };
 
   // benchmark più congruente alla selezione di universi.
   // TUTTI total return: i titoli usano l'adjusted close (dividendi reinvestiti),
@@ -145,17 +148,26 @@
   }
 
   /** Istogramma dell'universo: altezze in radice, così i bin piccoli restano visibili. */
+  /**
+   * Istogramma dell'universo dietro il cursore. Due accorgimenti:
+   * altezze in radice, perche i bin piccoli restino visibili; e riferimento al
+   * 90esimo percentile invece che al massimo, perche i valori fuori scala si
+   * accumulano nel bin di bordo e un solo picco schiaccerebbe tutto il resto
+   * (con R2 minimo a 0,70 quel bin vale da solo piu di meta universo).
+   */
   function histSvg(c) {
     const bins = state.hist && state.hist[c.k];
     if (!bins) return '';
-    const maxV = Math.sqrt(Math.max(1, Math.max.apply(null, bins)));
+    const vivi = bins.filter((x) => x > 0).sort((a, b) => a - b);
+    if (!vivi.length) return '';
+    const rif = Math.sqrt(Math.max(1, vivi[Math.floor((vivi.length - 1) * 0.9)]));
     const w = 100 / HIST_BINS;
     let r = '';
     for (let i = 0; i < HIST_BINS; i++) {
-      const h = (Math.sqrt(bins[i]) / maxV) * 100;
-      if (h <= 0) continue;
+      if (!(bins[i] > 0)) continue;
+      const h = Math.min(100, (Math.sqrt(bins[i]) / rif) * 100);
       r += `<rect class="bar" data-i="${i}" x="${(i * w).toFixed(3)}" y="${(100 - h).toFixed(2)}" ` +
-        `width="${(w * 0.82).toFixed(3)}" height="${h.toFixed(2)}"/>`;
+        `width="${(w * 0.82).toFixed(3)}" height="${h.toFixed(2)}"><title>${bins[i]} titoli</title></rect>`;
     }
     return `<svg class="hist" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${r}</svg>`;
   }
@@ -189,9 +201,20 @@
     ComaUI.skeletonCards(3, '#kpis-is');
     ComaUI.skeletonRows(6, '#port-tbl', 9);
     ComaUI.skeletonRows(8, '#screen-tbl', 12);
-    $('#verdict').innerHTML = '<div class="verdict idle"><div class="vi">⏳</div><div>' +
-      '<div class="vt">Carico gli universi…</div>' +
-      '<div class="vd">Metriche e curve vengono lette dai dati pre-calcolati, poi il portafoglio e il backtest si ricalcolano qui nel browser.</div></div></div>';
+    $('#verdict').innerHTML = '<div class="verdict"><div class="vhead">' +
+      '<span class="st st-normal">' + stIcon('normal') + 'Caricamento</span></div>' +
+      '<div class="vtext">Metriche e curve arrivano dai dati precalcolati; portafoglio e backtest ' +
+      'si ricalcolano qui nel browser.</div></div>';
+  }
+
+  /** Le forme dei badge di stato: si distinguono anche senza colore. */
+  function stIcon(kind) {
+    const s = (inner) => '<svg viewBox="0 0 12 12" aria-hidden="true">' + inner + '</svg>';
+    if (kind === 'watch') return s('<circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="2"/>');
+    if (kind === 'setup') return s('<path d="M6 1.5 L11 10.5 L1 10.5 Z" fill="none" stroke="currentColor" stroke-width="1.6"/>');
+    if (kind === 'trig') return s('<path d="M6 10.5 L1 1.5 L11 1.5 Z" fill="currentColor"/>');
+    if (kind === 'fail') return s('<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="2"/>');
+    return s('<rect x="2" y="5" width="8" height="2" fill="currentColor"/>');
   }
 
   async function loadAndMerge() {
@@ -232,12 +255,23 @@
       curves: { series, bench: benchCurve, rf: (state.benchmarks && state.benchmarks.rf) || null },
       benchLabel: bm.label,
     };
-    $('#updated').textContent = 'agg. ' + (updated ? new Date(updated).toLocaleDateString('it-IT') : '—');
+    setDataDate(updated);
     // istogrammi: dipendono dall'universo, quindi si ricalcolano a ogni merge
     state.hist = {};
     for (const c of CTRLS) { const b = buildHist(rows, c); if (b) state.hist[c.k] = b; }
     renderScreenCtrls();
     recomputeLive(); recomputeOOS(); renderAll();
+  }
+
+  /** Data dei dati e badge di freschezza nella barra comandi. */
+  function setDataDate(updated) {
+    const el = $('#updated'), fr = $('#fresh'), gen = $('#gen-date');
+    if (el) el.textContent = updated ? F.date(updated) : F.DASH;
+    if (gen) gen.textContent = updated ? F.date(updated) : F.DASH;
+    if (!fr || !updated) return;
+    const giorni = Math.floor((Date.now() - new Date(updated).getTime()) / 86400000);
+    fr.className = 'fresh ' + (giorni <= 9 ? 'ok' : giorni <= 21 ? 'late' : 'stale');
+    fr.textContent = giorni <= 9 ? 'AGGIORNATO' : giorni + ' GIORNI FA';
   }
 
   function recomputeLive() {
@@ -255,11 +289,11 @@
   // ---- render --------------------------------------------------------------
   function renderUniverseSelect() {
     const box = $('#universe-select');
-    let h = '<span class="muted" style="font-size:12px;margin-right:4px">Universi:</span>';
-    h += BASES.map((b) => `<span class="uchip${state.universes.includes(b.id) ? ' on' : ''}" data-u="${b.id}" title="${TIPS[b.id]}">${b.label}</span>`).join('');
-    h += '<span class="usep"></span>';
-    h += PRESETS.map((p, i) => `<button class="upreset" data-preset="${i}" title="${TIPS['preset' + i]}">${p.label}</button>`).join('');
-    box.innerHTML = h;
+    box.innerHTML = '<span>Universi</span>' +
+      '<div class="seg" role="group" aria-label="Universi da analizzare">' +
+      BASES.map((b) => `<button type="button" data-u="${b.id}" aria-pressed="${state.universes.includes(b.id)}" title="${TIPS[b.id]}">${b.label.toUpperCase()}</button>`).join('') +
+      '</div>' +
+      PRESETS.map((p, i) => `<button type="button" class="tool mini" data-preset="${i}" title="${TIPS['preset' + i]}">${p.label.toUpperCase()}</button>`).join('');
     box.querySelectorAll('[data-u]').forEach((el) => el.addEventListener('click', () => toggleUniverse(el.dataset.u)));
     box.querySelectorAll('[data-preset]').forEach((el) => el.addEventListener('click', () => setUniverses(PRESETS[+el.dataset.preset].set)));
   }
@@ -278,30 +312,33 @@
     loadAndMerge();
   }
 
-  /** Card KPI. `help` diventa un'icona ⓘ con tooltip; `kind` = hero | quiet. */
-  const card = (lab, val, cmp, help, kind) =>
-    `<div class="kpi${kind ? ' ' + kind : ''}"><div class="lab">${lab}` +
+  /**
+   * Riquadro KPI: etichetta in maiuscolo, valore, riga di contesto.
+   * Nessun numero senza contesto, come chiede il sistema.
+   */
+  const card = (lab, val, ctx, help) =>
+    `<div class="kpi"><span class="k">${lab}` +
     (help ? ` <span class="info" title="${help}">i</span>` : '') +
-    `</div><div class="val">${val}</div><div class="cmp">${cmp || ''}</div></div>`;
+    `</span><span class="v">${val}</span><span class="s">${ctx || ''}</span></div>`;
 
   /**
-   * Alfa della regressione sul benchmark, con beta e t-stat. E il KPI che
-   * distingue skill da esposizione al mercato: un "edge" del +3% con beta 0.7 e
-   * t 0.9 non e un edge, e meno mercato piu rumore.
+   * Alfa della regressione sul benchmark, con beta e t-stat: e il KPI che
+   * distingue la bravura dall'esposizione al mercato. Un "vantaggio" del +3%
+   * con beta 0,7 e t 0,9 non e un vantaggio, e meno mercato piu rumore.
    */
-  function alphaCard(reg, prefix, kind) {
-    if (!reg) return card('Alfa ' + prefix, 'n/d', 'benchmark non allineato', TIPS.alfa, kind);
+  function alphaCard(reg, prefix) {
+    if (!reg) return card('Alfa ' + prefix, F.DASH, 'benchmark non allineato', TIPS.alfa);
     const t = reg.alphaT, solido = isFinite(t) && Math.abs(t) >= 2;
-    const verdetto = solido ? `t ${num(t, 2)} · distinguibile da zero`
-      : `<b class="neg">t ${num(t, 2)}</b> · sotto 2: indistinguibile dal caso`;
-    return card(`Alfa ${prefix} <span class="muted">· β ${num(reg.beta, 2)}</span>`,
-      `<span class="${cls(reg.alpha)}">${pct(reg.alpha, 1)}</span>`, verdetto, TIPS.alfa, kind);
+    const ctx = solido
+      ? `t ${num(t, 2)} &middot; distinguibile da zero`
+      : `t ${num(t, 2)} &middot; sotto 2: indistinguibile dal caso`;
+    return card(`Alfa ${prefix} <span class="gr">&middot; β ${num(reg.beta, 2)}</span>`, delta(reg.alpha), ctx, TIPS.alfa);
   }
 
   /**
-   * Il verdetto: una frase sola che risponde alla domanda vera ("questo modello
-   * aggiunge qualcosa?"), prima dei numeri che la giustificano. Il criterio e il
-   * t-stat dell'alfa out-of-sample, non il CAGR.
+   * Il verdetto: una frase che risponde alla domanda vera, prima dei numeri che
+   * la giustificano. Il criterio e il t-stat dell'alfa out-of-sample, non il CAGR.
+   * Il badge blu e il segnale principale del progetto: la significativita.
    */
   function renderVerdict() {
     const box = $('#verdict');
@@ -310,30 +347,31 @@
     const sc = oosB && oosB.schemes[state.scheme];
     const reg = sc && sc.regression && sc.regression[rk];
     const m = sc && sc.metrics[rk];
-    const paint = (kind, icon, title, detail) =>
-      `<div class="verdict ${kind}"><div class="vi" aria-hidden="true">${icon}</div>` +
-      `<div><div class="vt">${title}</div><div class="vd">${detail}</div></div></div>`;
+    const meta = $('#verdict-meta');
+    if (meta) meta.textContent = oosB ? `${F.month(oosB.from)} &ndash; ${F.month(oosB.to)} &middot; ${schemeLabel[state.scheme].toLowerCase()}`.replace(/&ndash;/g, '\u2013').replace(/&middot;/g, '\u00b7') : '';
+
+    const paint = (stClass, icon, title, detail) =>
+      `<div class="verdict"><div class="vhead"><span class="st ${stClass}">${stIcon(icon)}${title}</span></div>` +
+      `<div class="vtext">${detail}</div></div>`;
 
     if (!reg || !m) {
-      box.innerHTML = paint('idle', '⏳', 'Validazione non disponibile',
+      box.innerHTML = paint('st-cool', 'normal', 'Validazione non disponibile',
         'Con queste soglie non restano abbastanza titoli con storia sufficiente per un test out-of-sample. Allarga i filtri o aggiungi un universo.');
       return;
     }
     const t = reg.alphaT, a = reg.alpha, b = reg.beta;
-    const base = `Alfa out-of-sample <b class="${cls(a)}">${pct(a, 1)}</b> con <b>t ${num(t, 2)}</b>, ` +
-      `beta <b>${num(b, 2)}</b>. CAGR ${pct(m.cagr)} contro ${pct(oosB.benchMetrics && oosB.benchMetrics.cagr)} del benchmark.`;
+    const base = `Alfa out-of-sample ${delta(a)} con <b class="num">t ${num(t, 2)}</b>, beta <b class="num">${num(b, 2)}</b>. ` +
+      `CAGR <b class="num">${pct(m.cagr)}</b> contro <b class="num">${pct(oosB.benchMetrics && oosB.benchMetrics.cagr)}</b> del benchmark.`;
     if (isFinite(t) && t >= 2) {
-      box.innerHTML = paint('good', '✅', 'Edge statisticamente significativo',
-        base + ' L\'extra-rendimento resta dopo aver tolto la parte spiegata dal mercato. ' +
-        'Resta però il survivorship bias dell\'universo: trattalo come indizio, non come prova.');
+      box.innerHTML = paint('st-setup', 'setup', 'Vantaggio significativo',
+        base + ' L&rsquo;extra-rendimento resta dopo aver tolto la parte spiegata dal mercato. Resta per&ograve; il survivorship bias dell&rsquo;universo: trattalo come indizio, non come prova.');
     } else if (isFinite(t) && t <= -2) {
-      box.innerHTML = paint('bad', '🔻', 'Sottoperformance significativa',
+      box.innerHTML = paint('st-fail', 'fail', 'Sottoperformance significativa',
         base + ' Il portafoglio ha reso meno di quanto giustificato dalla sua esposizione al mercato.');
     } else {
-      box.innerHTML = paint('warn', '⚖️', 'Nessun edge dimostrabile',
-        base + ` Sotto |t| = 2 l'alfa non è distinguibile dal caso: su questi dati il modello ` +
-        `non aggiunge nulla rispetto al benchmark. Con beta ${num(b, 2)} il portafoglio è ` +
-        `soprattutto <b>esposizione difensiva al mercato</b>, ottenibile in modo più semplice ed economico.`);
+      box.innerHTML = paint('st-watch', 'watch', 'Nessun vantaggio dimostrabile',
+        base + ` Sotto |t| = 2 l&rsquo;alfa non &egrave; distinguibile dal caso: su questi dati il modello non aggiunge nulla rispetto al benchmark. ` +
+        `Con beta ${num(b, 2)} il portafoglio &egrave; soprattutto <b>esposizione difensiva al mercato</b>, ottenibile in modo pi&ugrave; semplice ed economico.`);
     }
   }
 
@@ -348,29 +386,28 @@
 
     let oosHtml = '';
     if (om) {
-      const edge = om[rk].cagr - (oosB.benchMetrics ? oosB.benchMetrics.cagr : 0);
-      oosHtml += card('CAGR', pct(om[rk].cagr),
-        `bench ${pct(oosB.benchMetrics && oosB.benchMetrics.cagr)} · <b class="${cls(edge)}">${pct(edge, 1)}</b>`,
-        TIPS.cagr, 'hero');
-      oosHtml += alphaCard(oS.regression && oS.regression[rk], 'OOS', 'hero');
-      oosHtml += card('Sharpe', num(om[rk].sharpe),
-        `bench ${num(oosB.benchMetrics && oosB.benchMetrics.sharpe, 2)}`, TIPS.sharpeKpi);
-      oosHtml += card('Max drawdown', pct(om[rk].mdd, 0),
-        `bench ${pct(oosB.benchMetrics && oosB.benchMetrics.mdd, 0)}`, TIPS.mdd);
+      const bm = oosB.benchMetrics;
+      const edge = om[rk].cagr - (bm ? bm.cagr : 0);
+      oosHtml += card('CAGR out-of-sample', pct(om[rk].cagr),
+        `benchmark ${pct(bm && bm.cagr)} &middot; ${delta(edge)}`, TIPS.cagr);
+      oosHtml += alphaCard(oS.regression && oS.regression[rk], 'OOS');
+      oosHtml += card('Sharpe', num(om[rk].sharpe), `benchmark ${num(bm && bm.sharpe, 2)}`, TIPS.sharpeKpi);
+      oosHtml += card('Drawdown massimo', `<span class="down">${pct(om[rk].mdd, 0)}</span>`,
+        `benchmark ${pct(bm && bm.mdd, 0)}`, TIPS.mdd);
     } else {
-      oosHtml = card('Out-of-sample', 'n/d', 'titoli insufficienti per la validazione');
+      oosHtml = card('Out-of-sample', F.DASH, 'titoli insufficienti per la validazione');
     }
     $('#kpis').innerHTML = oosHtml;
 
     let isHtml = '';
     if (im) {
-      const edge = im[rk].cagr - (insB.benchMetrics ? insB.benchMetrics.cagr : 0);
-      isHtml += card('CAGR', pct(im[rk].cagr),
-        `bench ${pct(insB.benchMetrics && insB.benchMetrics.cagr)} · <b class="${cls(edge)}">${pct(edge, 1)}</b>`,
-        TIPS.insample, 'quiet');
-      isHtml += alphaCard(iS.regression && iS.regression[rk], 'IS', 'quiet');
-      isHtml += card('Sharpe', num(im[rk].sharpe), `MaxDD ${pct(im[rk].mdd, 0)}`, TIPS.sharpeKpi, 'quiet');
-    } else isHtml = card('In-sample', 'n/d', 'titoli insufficienti', null, 'quiet');
+      const bm = insB.benchMetrics;
+      const edge = im[rk].cagr - (bm ? bm.cagr : 0);
+      isHtml += card('CAGR in-sample', pct(im[rk].cagr),
+        `benchmark ${pct(bm && bm.cagr)} &middot; ${delta(edge)}`, TIPS.insample);
+      isHtml += alphaCard(iS.regression && iS.regression[rk], 'IS');
+      isHtml += card('Sharpe', num(im[rk].sharpe), `drawdown ${pct(im[rk].mdd, 0)}`, TIPS.sharpeKpi);
+    } else isHtml = card('In-sample', F.DASH, 'titoli insufficienti');
     $('#kpis-is').innerHTML = isHtml;
   }
 
@@ -389,37 +426,51 @@
   const emptyState = (title, hint, cols) =>
     `<tbody><tr><td colspan="${cols}"><div class="empty"><b>${title}</b>${hint}</div></td></tr></tbody>`;
 
+  /** Intestazione di colonna: etichetta in maiuscolo, ordinamento con aria-sort. */
+  const th = (label, tip, opt) => {
+    opt = opt || {};
+    const aria = opt.sort ? ` aria-sort="${opt.sort}"` : '';
+    const k = opt.k ? ` data-k="${opt.k}"` : '';
+    const r = opt.r ? ' class="r"' : '';
+    const mark = opt.sort ? (opt.sort === 'descending' ? ' \u25BC' : ' \u25B2') : '';
+    const inner = opt.k ? `<button type="button">${label}${mark}</button>` : label + mark;
+    return `<th scope="col"${r}${k}${aria} title="${tip || ''}">${inner}</th>`;
+  };
+
   function renderPortfolio() {
     const live = state.live;
     if (!live || live.insufficient || !live.picks.length) {
       $('#port-n').textContent = 'nessun titolo';
       $('#port-tbl').innerHTML = emptyState('Nessun portafoglio con queste soglie',
-        'Le soglie sono troppo restrittive, oppure i titoli superstiti non hanno una storia comune abbastanza lunga. Prova ad abbassare R² o CAGR minimo, o ad aggiungere un universo.', 9);
+        'Le soglie sono troppo restrittive, oppure i titoli superstiti non hanno una storia comune abbastanza lunga. Prova ad abbassare R\u00b2 o il CAGR minimo, o ad aggiungere un universo.', 9);
       return;
     }
     const wk = wKey[state.scheme];
     const picks = live.picks.slice().sort((a, b) => b[wk] - a[wk]);
     const bt = live.backtest;
     const to = bt && bt.schemes[state.scheme].metrics.rebal.turnover;
-    $('#port-n').textContent = `${picks.length} titoli · ${schemeLabel[state.scheme]}` +
-      (state.scheme === 'resampled' ? ` · ${live.scenarios} scenari` : '') +
-      (bt ? ` · finestra ${bt.from}→${bt.to}` : '') +
-      (to ? ` · turnover ${(to * 100).toFixed(0)}%/anno` : '') +
-      (live.dropped ? ` · ${live.dropped} esclusi (curva o copertura)` : '');
+    $('#port-n').textContent = `${picks.length} titoli \u00b7 ${schemeLabel[state.scheme].toLowerCase()}` +
+      (state.scheme === 'resampled' ? ` \u00b7 ${live.scenarios} scenari` : '') +
+      (bt ? ` \u00b7 ${F.month(bt.from)}\u2013${F.month(bt.to)}` : '') +
+      (to ? ` \u00b7 turnover ${pct(to, 0)}/anno` : '') +
+      (live.dropped ? ` \u00b7 ${live.dropped} esclusi` : '');
     const maxW = Math.max(...picks.map((x) => x[wk]));
-    const winMonths = bt ? Math.round((T.minYears || 15) * 12) : 180;
-    const ph = [['t', 'Ticker'], ['w', 'Peso'], ['spark', 'Curva'], ['quality', 'Quality'],
-      ['cagr', 'CAGR'], ['mdd', 'MaxDD'], ['min5y', 'Min 5Y'], ['r2', 'R²'], ['reg', 'Reg.']];
-    let h = '<thead><tr>' + ph.map(([k, l]) => `<th scope="col" title="${TIPS[k]}">${l}</th>`).join('') + '</tr></thead><tbody>';
+    const winMonths = Math.round((T.minYears || 15) * 12);
+    let h = '<thead><tr>' +
+      th('Titolo', TIPS.t) + th('Peso', TIPS.w) + th('Curva', TIPS.spark) +
+      th('Quality', TIPS.quality, { r: 1 }) + th('CAGR', TIPS.cagr, { r: 1 }) +
+      th('Drawdown', TIPS.mdd, { r: 1 }) + th('Min 5 anni', TIPS.min5y, { r: 1 }) +
+      th('R\u00b2', TIPS.r2, { r: 1 }) + th('Regolarit\u00e0', TIPS.reg, { r: 1 }) +
+      '</tr></thead><tbody>';
     for (const x of picks) {
-      h += `<tr><td class="tk">${x.t}</td>` +
-        `<td><span class="wbar" style="width:${(x[wk] / maxW * 46).toFixed(0)}px"></span>${pct(x[wk])}</td>` +
+      h += `<tr data-sym="${x.t}" tabindex="0"><td><span class="sym">${x.t}</span></td>` +
+        `<td><span class="wbar"><i style="width:${(x[wk] / maxW * 100).toFixed(0)}%"></i></span><span class="num">${pct(x[wk])}</span></td>` +
         `<td>${sparkline(x.t, winMonths)}</td>` +
-        `<td>${num(x.quality, 2)}</td>` +
-        `<td class="${cls(x.cagr)}">${pct(x.cagr, 0)}</td>` +
-        `<td class="neg">${pct(x.mdd, 0)}</td>` +
-        `<td class="${cls(x.min5y)}">${pct(x.min5y, 0)}</td>` +
-        `<td>${num(x.r2, 3)}</td><td>${pct(x.reg, 0)}</td></tr>`;
+        `<td class="num r">${num(x.quality, 2)}</td>` +
+        `<td class="num r">${pct(x.cagr, 0)}</td>` +
+        `<td class="num r down">${pct(x.mdd, 0)}</td>` +
+        `<td class="num r">${F.signedPct(x.min5y, 0)}</td>` +
+        `<td class="num r">${num(x.r2, 3)}</td><td class="num r">${pct(x.reg, 0)}</td></tr>`;
     }
     $('#port-tbl').innerHTML = h + '</tbody>';
   }
@@ -428,7 +479,7 @@
     let h = '';
     for (const c of CTRLS) {
       const hist = histSvg(c);
-      h += `<div class="ctrl"><label for="rng-${c.k}" title="${TIPS[c.k]}">` +
+      h += `<div class="ctl-range"><label for="rng-${c.k}" title="${TIPS[c.k]}">` +
         `<span>${c.label} <span class="info">i</span></span> <b id="lbl-${c.k}">${c.fmt(T[c.k])}</b></label>` +
         (hist ? hist.replace('class="hist"', `class="hist" id="hist-${c.k}"`) : '') +
         `<input type="range" id="rng-${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${T[c.k]}" ` +
@@ -474,53 +525,57 @@
     const res = E.screen(state.merged.metrics.rows, { ...T, ppy: 252, sortBy: state.sortKey });
     if (state.sortDir === 1) res.picks.reverse();
     state.lastScreen = res.picks;
+
     // imbuto: quale soglia sta davvero scartando i titoli
     const s = res.skipped;
-    const step = (lab, n, kind) => `<span class="fstep ${kind || ''}" title="${TIPS['f_' + kind] || ''}">${lab} <b>${n}</b></span>`;
-    const cut = [['storia', s.storico], ['5Y negativo', s.cinqueY], ['R²', s.r2],
+    const step = (lab, n, kind) => `<span class="fstep ${kind || ''}" title="${TIPS['f_' + kind] || ''}">${lab} <b class="num">${n}</b></span>`;
+    const cut = [['storia', s.storico], ['quinquennio negativo', s.cinqueY], ['R\u00b2', s.r2],
       ['CAGR', s.cagr], ['drawdown', s.dd]].filter(([, n]) => n > 0);
     $('#screen-summary').innerHTML = '<div class="funnel">' +
       step('Analizzati', state.merged.metrics.count) +
-      (cut.length ? '<span class="farrow">→ scartati da</span>' : '') +
+      (cut.length ? '<span class="farrow">\u2192 scartati da</span>' : '') +
       cut.map(([l, n]) => step(l, n, 'cut')).join('') +
-      '<span class="farrow">→</span>' +
+      '<span class="farrow">\u2192</span>' +
       step('Passati', res.passed, 'keep') +
-      (res.picks.length < res.passed ? step('in tabella (top N)', res.picks.length) : '') +
+      (res.picks.length < res.passed ? step('in tabella', res.picks.length) : '') +
       '</div>';
 
-    const cols = [['t', 'Ticker'], ['spark', 'Curva'], ['quality', 'Quality'], ['cagr', 'CAGR'], ['vol', 'Vol'],
-      ['mdd', 'MaxDD'], ['min5y', 'Min5Y'], ['r2', 'R²'], ['reg', 'Reg.'], ['mar', 'MAR'], ['sortino', 'Sortino']];
-    const sortable = (k) => k !== 'mdd' && k !== 'reg' && k !== 't' && k !== 'spark';
-    let h = '<thead><tr><th scope="col" title="Clicca ★ per aggiungere il titolo al basket custom in fondo alla pagina"><span class="sr-only">Basket</span>★</th>' +
-      cols.map(([k, l]) => {
-        const on = state.sortKey === k;
-        const aria = on ? ` aria-sort="${state.sortDir < 0 ? 'descending' : 'ascending'}"` : '';
-        const tip = (TIPS[k] || '') + (sortable(k) ? ' — clicca per ordinare.' : '');
-        return `<th scope="col" data-k="${k}"${aria} title="${tip}">${l}${on ? (state.sortDir < 0 ? ' ▾' : ' ▴') : ''}</th>`;
-      }).join('') + '</tr></thead>';
+    const cols = [['quality', 'Quality'], ['cagr', 'CAGR'], ['vol', 'Volatilit\u00e0'],
+      ['mdd', 'Drawdown'], ['min5y', 'Min 5 anni'], ['r2', 'R\u00b2'], ['reg', 'Regolarit\u00e0'],
+      ['mar', 'MAR'], ['sortino', 'Sortino']];
+    const sortable = (k) => k !== 'mdd' && k !== 'reg';
+    const dir = state.sortDir < 0 ? 'descending' : 'ascending';
+    let h = '<thead><tr>' +
+      '<th scope="col" title="Segna il titolo per metterlo nel basket in fondo alla pagina"><span class="sr">Basket</span>\u2605</th>' +
+      th('Titolo', TIPS.t) + th('Curva', TIPS.spark) +
+      cols.map(([k, l]) => th(l, (TIPS[k] || '') + (sortable(k) ? ' Clicca per ordinare.' : ''),
+        { r: 1, k: sortable(k) ? k : null, sort: state.sortKey === k ? dir : null })).join('') +
+      '</tr></thead>';
     if (!res.picks.length) {
       $('#screen-tbl').innerHTML = h + emptyState('Nessun titolo supera le soglie',
-        'L\'imbuto qui sopra dice quale filtro sta scartando tutto. Usa ↺ Reset filtri per tornare ai valori di default.', cols.length + 1);
+        'L\u2019imbuto qui sopra dice quale filtro sta scartando tutto. Usa Azzera soglie per tornare ai valori di partenza.', cols.length + 3);
     } else {
+      const winMonths = Math.round((T.minYears || 15) * 12);
       h += '<tbody>';
       for (const r of res.picks) {
-        const on = state.basket.has(r.t) ? ' on' : '';
-        h += `<tr><td><span class="star${on}" data-star="${r.t}" role="button" tabindex="0" ` +
-          `aria-label="${on ? 'Togli' : 'Aggiungi'} ${r.t} ${on ? 'dal' : 'al'} basket">${on ? '★' : '☆'}</span></td>` +
-          `<td class="tk">${r.t}</td>` +
-          `<td>${sparkline(r.t, Math.round((T.minYears || 15) * 12))}</td>` +
-          `<td><b>${num(r.quality, 2)}</b></td>` +
-          `<td class="${cls(r.cagr)}">${pct(r.cagr, 0)}</td>` +
-          `<td>${pct(r.vol, 0)}</td>` +
-          `<td class="neg">${pct(r.mdd, 0)}</td>` +
-          `<td class="${cls(r.min5y)}">${pct(r.min5y, 0)}</td>` +
-          `<td>${num(r.r2, 3)}</td><td>${pct(r.reg, 0)}</td>` +
-          `<td>${num(r.mar, 2)}</td><td>${num(r.sortino, 2)}</td></tr>`;
+        const on = state.basket.has(r.t);
+        h += `<tr data-sym="${r.t}"${state.hl === r.t ? ' class="sel"' : ''}>` +
+          `<td><span class="chip" role="button" tabindex="0" data-star="${r.t}" aria-pressed="${on}" ` +
+          `aria-label="${on ? 'Togli' : 'Aggiungi'} ${r.t} ${on ? 'dal' : 'al'} basket">${on ? '\u2605' : '\u2606'}</span></td>` +
+          `<td><span class="sym">${r.t}</span></td>` +
+          `<td>${sparkline(r.t, winMonths)}</td>` +
+          `<td class="num r">${num(r.quality, 2)}</td>` +
+          `<td class="num r">${pct(r.cagr, 0)}</td>` +
+          `<td class="num r">${pct(r.vol, 0)}</td>` +
+          `<td class="num r down">${pct(r.mdd, 0)}</td>` +
+          `<td class="num r">${F.signedPct(r.min5y, 0)}</td>` +
+          `<td class="num r">${num(r.r2, 3)}</td><td class="num r">${pct(r.reg, 0)}</td>` +
+          `<td class="num r">${num(r.mar, 2)}</td><td class="num r">${num(r.sortino, 2)}</td></tr>`;
       }
       $('#screen-tbl').innerHTML = h + '</tbody>';
     }
-    $('#screen-tbl').querySelectorAll('th[data-k]').forEach((th) => th.addEventListener('click', () => {
-      const k = th.dataset.k; if (!sortable(k)) return;
+    $('#screen-tbl').querySelectorAll('th[data-k]').forEach((el) => el.addEventListener('click', () => {
+      const k = el.dataset.k;
       if (state.sortKey === k) state.sortDir *= -1; else { state.sortKey = k; state.sortDir = -1; }
       renderScreenTable();
     }));
@@ -551,21 +606,29 @@
     const ab = activeBuild(); state.build = ab;
     const chips = $('#basket-chips');
     if (state.basket.size) {
-      chips.innerHTML = [...state.basket].map((t) => `<span class="chip">${t}<b data-rm="${t}">×</b></span>`).join('') +
-        `<span class="chip" style="cursor:pointer" id="basket-clear">svuota</span>`;
-      chips.querySelectorAll('[data-rm]').forEach((el) => el.addEventListener('click', () => { state.basket.delete(el.dataset.rm); renderScreenTable(); renderBasket(); }));
-      $('#basket-clear').addEventListener('click', () => { state.basket.clear(); renderScreenTable(); renderBasket(); });
-    } else chips.innerHTML = '<span class="muted">Basket vuoto — verrà salvato/esportato il portafoglio canonico corrente.</span>';
+      chips.innerHTML = [...state.basket].map((t) =>
+        `<button type="button" class="chip" data-rm="${t}" aria-label="Togli ${t} dal basket">${t} \u00d7</button>`).join('') +
+        '<button type="button" class="tool mini" id="basket-clear">SVUOTA</button>';
+      chips.querySelectorAll('[data-rm]').forEach((el) => el.addEventListener('click', () => {
+        state.basket.delete(el.dataset.rm); renderScreenTable(); renderBasket();
+      }));
+      $('#basket-clear').addEventListener('click', () => {
+        state.basket.clear(); renderScreenTable(); renderBasket();
+      });
+    } else chips.innerHTML = '<span class="note">Basket vuoto: vale il portafoglio corrente.</span>';
 
     const box = $('#basket-metrics'), r = ab.res;
-    if (!r || r.insufficient || !r.picks.length) { box.innerHTML = '<div class="kpi"><div class="lab">Basket</div><div class="val" style="font-size:14px">titoli insufficienti</div></div>'; return; }
+    if (!r || r.insufficient || !r.picks.length) {
+      box.innerHTML = card('Basket', F.DASH, 'titoli insufficienti');
+      return;
+    }
     const m = r.backtest.schemes[state.scheme].metrics.rebal, bm = r.backtest.benchMetrics;
     const edge = bm ? m.cagr - bm.cagr : null;
-    const card = (lab, val, cmp) => `<div class="kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="cmp">${cmp || ''}</div></div>`;
     box.innerHTML =
-      card(`${ab.source === 'custom' ? 'Custom' : 'Canonico'} · ${schemeLabel[state.scheme]}`, r.picks.length + ' titoli', r.dropped ? r.dropped + ' senza curva' : 'in-sample (mensile)') +
-      card('CAGR in-sample', pct(m.cagr), edge != null ? `edge <b class="${cls(edge)}">${pct(edge, 1)}</b> vs bench` : '') +
-      card('Sharpe', num(m.sharpe), `MaxDD ${pct(m.mdd, 0)}`);
+      card(ab.source === 'custom' ? 'Basket personale' : 'Portafoglio corrente',
+        r.picks.length + ' titoli', schemeLabel[state.scheme].toLowerCase() + (r.dropped ? ' \u00b7 ' + r.dropped + ' senza curva' : '')) +
+      card('CAGR in-sample', pct(m.cagr), edge != null ? `${delta(edge)} rispetto al benchmark` : '') +
+      card('Sharpe', num(m.sharpe), `drawdown ${pct(m.mdd, 0)}`);
   }
 
   async function saveSnapshot() {
@@ -604,7 +667,7 @@
     });
   }
 
-  function setStatus(msg, err) { const e = $('#save-status'); e.textContent = msg; e.style.color = err ? 'var(--red)' : 'var(--tx3)'; }
+  function setStatus(msg, err) { const e = $('#save-status'); e.textContent = msg; e.style.color = err ? 'var(--down)' : 'var(--ink-3)'; }
 
   async function renderSnapshots() {
     const box = $('#snapshots');
@@ -616,10 +679,10 @@
         const d = s.createdAt && s.createdAt.toDate ? s.createdAt.toDate().toLocaleString('it-IT') : '—';
         const uni = (s.universes || [s.universe]).join('+');
         const cagr = s.metricsOOS ? pct(s.metricsOOS.cagr) : (s.metricsIS ? pct(s.metricsIS.cagr) + ' IS' : '–');
-        const g = s.regressionOOS ? ` · α ${pct(s.regressionOOS.alpha)} (t ${num(s.regressionOOS.alphaT, 2)})` : '';
+        const g = s.regressionOOS ? ` · α ${F.signedPct(s.regressionOOS.alpha)} (t ${num(s.regressionOOS.alphaT, 2)})` : '';
         return `<div class="snap"><span class="ld" data-load="${s.id}">${uni} · ${s.source} · ${s.scheme}</span>` +
           `<span class="muted">${s.picks.length} titoli · OOS ${cagr}${g} · ${d}${s.note ? ' · ' + s.note : ''}</span>` +
-          `<span class="del" data-del="${s.id}">🗑</span></div>`;
+          `<button type="button" class="del" data-del="${s.id}" aria-label="Elimina lo snapshot">ELIMINA</button></div>`;
       }).join('');
       box.querySelectorAll('[data-load]').forEach((el) => el.addEventListener('click', () => loadSnapshot(snaps.find((x) => x.id === el.dataset.load))));
       box.querySelectorAll('[data-del]').forEach((el) => el.addEventListener('click', async () => {
@@ -662,43 +725,72 @@
       if (!btn) return;
       state[key] = btn.dataset.v;
       $(id).querySelectorAll('button').forEach((b) => {
-        const on = b === btn;
-        b.classList.toggle('on', on);
-        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
       });
       after();
     });
   }
 
-  /** L'avviso metodologico si può chiudere, ma resta un richiamo compatto. */
-  function initCaveat() {
-    const full = $('#caveat'), mini = $('#caveat-show');
-    let hidden = false;
-    try { hidden = localStorage.getItem('coma-caveat') === 'hidden'; } catch (e) {}
-    const apply = (h) => { full.hidden = h; mini.hidden = !h; };
-    apply(hidden);
-    $('#caveat-hide').addEventListener('click', () => {
-      apply(true); try { localStorage.setItem('coma-caveat', 'hidden'); } catch (e) {}
-    });
-    mini.addEventListener('click', () => {
-      apply(false); try { localStorage.removeItem('coma-caveat'); } catch (e) {}
-    });
+  /**
+   * Tema per daltonici: cambia solo "su" e "giu" (azzurro e rosso).
+   * Il design system ha un solo tema scuro, quindi non c'e un chiaro/scuro.
+   */
+  function applyCvd(on) {
+    document.getElementById('term').classList.toggle('cvd', on);
+    const btn = $('#cvd-toggle');
+    if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    try { localStorage.setItem('coma-cvd', on ? '1' : '0'); } catch (e) {}
+    renderBacktest(); // i grafici rileggono i colori dal tema
+  }
+  function initCvd() {
+    let on = false;
+    try { on = localStorage.getItem('coma-cvd') === '1'; } catch (e) {}
+    applyCvd(on);
+    $('#cvd-toggle').addEventListener('click', () =>
+      applyCvd($('#cvd-toggle').getAttribute('aria-pressed') !== 'true'));
   }
 
-  function applyTheme(t) {
-    document.documentElement.setAttribute('data-theme', t);
-    try { localStorage.setItem('antigravity-theme', t); } catch (e) {}
-    const btn = $('#theme-toggle');
-    if (btn) { btn.textContent = t === 'light' ? '☾' : '☀'; btn.title = t === 'light' ? 'Passa al tema scuro' : 'Passa al tema chiaro'; }
-    document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'light' ? '#fbf7f1' : '#15130f');
+  /** La guida: dialogo modale, il focus torna a chi l'ha aperta. */
+  function initHelp() {
+    const dlg = $('#help-dlg'), opener = $('#btn-help');
+    if (!dlg || !opener) return;
+    opener.addEventListener('click', () => {
+      if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    });
+    $('#help-close').addEventListener('click', () => {
+      if (dlg.close) dlg.close(); else dlg.removeAttribute('open');
+      opener.focus();
+    });
+    dlg.addEventListener('close', () => opener.focus());
   }
-  function initTheme() {
-    let t = 'light'; try { t = localStorage.getItem('antigravity-theme') || localStorage.getItem('coma-theme') || 'light'; } catch (e) {}
-    applyTheme(t);
-    $('#theme-toggle').addEventListener('click', () => {
-      const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-      applyTheme(cur === 'light' ? 'dark' : 'light');
-      renderBacktest(); // i grafici rileggono i colori del tema
+
+  /**
+   * Barra comandi: un ticker lo cerca nello screening e lo evidenzia, GUIDA apre
+   * la guida. Un comando non trovato compare nel segnaposto per quattro secondi.
+   */
+  function initCommand() {
+    const form = $('#cmd-form'), input = $('#cmd-input');
+    if (!form || !input) return;
+    const base = input.placeholder;
+    let timer = null;
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const q = (input.value || '').trim().toUpperCase();
+      if (!q) return;
+      input.value = '';
+      if (q === 'GUIDA' || q === 'HELP') { $('#btn-help').click(); return; }
+      const row = state.merged && state.merged.metrics.rows.find((r) => r.t === q);
+      if (!row) {
+        form.classList.add('err');
+        input.placeholder = q + ' non trovato in questo universo';
+        clearTimeout(timer);
+        timer = setTimeout(() => { form.classList.remove('err'); input.placeholder = base; }, 4000);
+        return;
+      }
+      state.hl = q;
+      renderScreenTable();
+      const el = $('#screen-tbl [data-sym="' + q + '"]');
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
   }
 
@@ -706,8 +798,9 @@
   function init() {
     if (inited) return; // guardia contro doppio DOMContentLoaded
     inited = true;
-    initTheme();
-    initCaveat();
+    initCvd();
+    initHelp();
+    initCommand();
     if (window.ComaUI) ComaUI.initTooltips();
     renderUniverseSelect();
     renderScreenCtrls();

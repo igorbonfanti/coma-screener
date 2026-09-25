@@ -3,103 +3,146 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Come entrare — Coma Screener</title>
-<meta name="theme-color" content="#fbf7f1">
+<title>Come entrare &mdash; Coma Screener</title>
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.json">
-<script>(function(){try{var t=localStorage.getItem('antigravity-theme')||localStorage.getItem('coma-theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/terminale.css">
 <link rel="stylesheet" href="css/coma.css">
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="brand">
-      <div class="logo" aria-hidden="true">C</div>
-      <div>
-        <h1>Come entrare</h1>
-        <div class="sub">Ribassi, PAC o rottura dei massimi: cosa conviene davvero</div>
-      </div>
-    </div>
-    <div class="masthead-r">
-      <a class="icon-btn" href="index.html" title="Torna allo screener">← Screener</a>
-      <span class="dateline" id="updated">…</span>
-      <button id="theme-toggle" class="icon-btn" title="Cambia tema chiaro / scuro" aria-label="Cambia tema">◐</button>
-    </div>
+<div class="term" id="term">
+
+  <header class="cmdbar">
+    <h1 class="brand">COMA&middot;SCREEN</h1>
+    <form class="cmd" id="cmd-form" onsubmit="return false">
+      <span class="prompt" aria-hidden="true">&gt;</span>
+      <input id="cmd-input" aria-label="Comando" placeholder="Comando: un ticker del portafoglio, GUIDA &middot; poi Invio">
+      <button class="go" type="submit">GO</button>
+    </form>
+    <span class="clock">DATI <b id="updated">&ndash;</b><span class="fresh ok" id="fresh">AGGIORNATO</span></span>
+    <span class="tools">
+      <button type="button" class="tool" id="btn-help">? GUIDA</button>
+      <button type="button" class="tool" id="cvd-toggle" aria-pressed="false" title="Tema per daltonici: su e gi&ugrave; diventano azzurro e rosso">CVD</button>
+    </span>
   </header>
 
-  <div class="toolbar">
-    <div class="usel-group" id="universe-select"></div>
-    <span class="usep"></span>
-    <span class="seg-lab">Portafoglio</span>
-    <div class="seg" id="seg-source" role="group" aria-label="Da dove prendere i titoli">
-      <button data-v="oos" class="on" aria-pressed="true" title="I titoli scelti dallo screening usando solo i dati fino a ~7 anni fa. È la selezione onesta.">Selezione OOS</button>
-      <button data-v="canonical" aria-pressed="false" title="I titoli scelti sull'intero storico. Selezione circolare: usala solo come riferimento.">In-sample</button>
+  <nav aria-label="Viste">
+    <div class="fnkeys">
+      <a href="index.html">1 SCREENER</a>
+      <a href="entry.html" aria-current="page">2 INGRESSI</a>
     </div>
-  </div>
+  </nav>
 
-  <div class="banner" id="caveat">
-    <div>Queste statistiche misurano <b>quando</b> entrare, non <b>se</b> il portafoglio valga la pena — per quello vedi l'alfa nello <a href="index.html">screener</a>. Tutte le strategie condividono lo <b>stesso schema di versamenti</b> e la liquidità in attesa è remunerata al risk-free: senza questo, chi resta liquido vince per finta. Ogni confronto è ripetuto su <b>tutte le date di partenza</b> possibili, non su una sola. Accanto a ogni numero trovi lo stesso calcolo sull'<b>universo non filtrato</b>, per distinguere ciò che dipende dalla selezione da ciò che vale per il mercato.</div>
-    <button class="x" id="caveat-hide" aria-label="Nascondi l'avviso metodologico">×</button>
-  </div>
-  <button class="banner-mini" id="caveat-show" hidden>Mostra l'avviso metodologico</button>
-
-  <div id="verdict"></div>
-
-  <div class="kpi-group">
-    <div class="kpi-head">
-      <span class="t">Anatomia dei ribassi</span>
-      <span class="h">mediana sui titoli del portafoglio, storia piena <span class="info" title="Calcolata su tutta la storia disponibile e non sulla finestra a 15 anni del backtest: quella parte dal 2011 e si perderebbe il 2008, l'unico vero stress test presente nel campione.">i</span></span>
+  <div class="filters">
+    <div class="ctl" id="universe-select"></div>
+    <div class="ctl"><span>Portafoglio</span>
+      <div class="seg" id="seg-source" role="group" aria-label="Da dove prendere i titoli">
+        <button type="button" data-v="oos" aria-pressed="true" title="I titoli scelti dallo screening usando solo i dati fino a circa 7 anni fa. &Egrave; la selezione onesta.">SELEZIONE OOS</button>
+        <button type="button" data-v="canonical" aria-pressed="false" title="I titoli scelti sull&rsquo;intero storico. Selezione circolare: solo riferimento.">IN-SAMPLE</button>
+      </div>
     </div>
-    <div class="kpis" id="kpis-dd"></div>
-  </div>
-
-  <section class="sec">
-    <h2>Conviene aspettare il ribasso? <span class="pill" id="cmp-n"></span></h2>
-    <div class="desc">Ricchezza finale di ogni strategia rispetto a <b>investire subito</b>, a parità di versamenti. Il numero decisivo non è il rendimento medio ma <b>quante volte su cento partenze</b> la strategia batte l'alternativa semplice — e quanto capitale è rimasto fermo ad aspettare.</div>
-    <div class="seg-wrap" style="margin-bottom:18px">
-      <span class="seg-lab">Versamenti</span>
+    <div class="ctl"><span>Versamenti</span>
       <div class="seg" id="seg-sched" role="group" aria-label="Schema dei versamenti">
-        <button data-v="lump" class="on" aria-pressed="true" title="Hai una somma da investire una volta sola: la metti subito o aspetti?">Capitale unico</button>
-        <button data-v="pac" aria-pressed="false" title="Versi una quota ogni trimestre: la investi appena arriva o la accumuli aspettando l'occasione?">PAC trimestrale</button>
+        <button type="button" data-v="lump" aria-pressed="true" title="Hai una somma da investire una volta sola: la metti subito o aspetti?">CAPITALE UNICO</button>
+        <button type="button" data-v="pac" aria-pressed="false" title="Versi una quota ogni trimestre: la investi appena arriva o la accumuli aspettando l&rsquo;occasione?">PAC TRIMESTRALE</button>
       </div>
     </div>
-    <div class="tbl-scroll"><table id="cmp-tbl"></table></div>
-    <div class="chart-cap">«Investito» è la quota media del capitale disponibile che risulta esposta al mercato: il resto è liquidità in attesa, che rende il risk-free e non il titolo. «Mai scattato» è la percentuale di partenze in cui il segnale non è mai arrivato e i soldi sono rimasti fermi fino alla fine.</div>
-  </section>
+  </div>
 
-  <section class="sec">
-    <h2>Quanto rende comprare in ribasso <span class="pill" id="cond-n"></span></h2>
-    <div class="desc">Rendimento annuo dei <b>tre anni successivi</b> all'acquisto, in base allo stato in cui compri. Risponde a una domanda diversa dalla tabella sopra: là si chiede se convenga <i>aspettare</i> il ribasso, qui se il ribasso, <i>quando arriva</i>, sia un buon momento.</div>
-    <div class="seg-wrap" style="margin-bottom:18px">
-      <span class="seg-lab">Segnale</span>
-      <div class="seg" id="seg-cond" role="group" aria-label="Segnale di condizionamento">
-        <button data-v="dd" class="on" aria-pressed="true" title="Distanza dal massimo precedente: il ribasso in senso classico.">Ribasso dai massimi</button>
-        <button data-v="z" aria-pressed="false" title="Posizione rispetto al proprio trend log-lineare, stimato su finestra espansiva. È la versione scala-invariante della 'zona di valore'.">Distanza dal trend</button>
+  <main class="view">
+
+    <div class="panel" style="margin-bottom:12px">
+      <div class="ph"><h2>Verdetto sull&rsquo;ingresso</h2><span class="meta" id="verdict-meta"></span></div>
+      <div class="pb" id="verdict"></div>
+    </div>
+
+    <div class="kpis" id="kpis-dd"></div>
+
+    <div class="grid-side">
+      <div class="stack">
+
+        <div class="panel">
+          <div class="ph"><h2>Conviene aspettare il ribasso?</h2><span class="meta" id="cmp-n"></span></div>
+          <p class="note" style="padding:8px 10px 0">Ricchezza finale di ogni strategia rispetto a <b>investire subito</b>, a parit&agrave; di versamenti. Il numero decisivo non &egrave; il rendimento medio ma <b>quante volte su cento partenze</b> la strategia batte l&rsquo;alternativa semplice, e quanto capitale &egrave; rimasto fermo ad aspettare.</p>
+          <div class="tscroll"><table class="t" id="cmp-tbl"></table></div>
+          <div class="legend">
+            <span><i class="kb" style="background:var(--blue)"></i>Soglia del 50%: sopra, la strategia batte l&rsquo;acquisto immediato</span>
+            <span class="muted">La liquidit&agrave; in attesa rende il risk-free, non il titolo.</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="ph"><h2>Quanto rende comprare in ribasso</h2><span class="meta" id="cond-n"></span></div>
+          <div class="pb" style="padding-bottom:0">
+            <p class="note">Rendimento annuo dei periodi successivi all&rsquo;acquisto, in base allo stato in cui compri. &Egrave; una domanda diversa da quella sopra: l&igrave; si chiede se convenga <i>aspettare</i> il ribasso, qui se il ribasso, <i>quando arriva</i>, sia un buon momento.</p>
+            <div class="ctl" style="margin:8px 0"><span>Segnale</span>
+              <div class="seg" id="seg-cond" role="group" aria-label="Segnale di condizionamento">
+                <button type="button" data-v="dd" aria-pressed="true" title="Distanza dal massimo precedente: il ribasso in senso classico.">RIBASSO DAI MASSIMI</button>
+                <button type="button" data-v="z" aria-pressed="false" title="Posizione rispetto al proprio trend logaritmico, stimato su finestra espansiva. &Egrave; la versione scala-invariante della zona di valore.">DISTANZA DAL TREND</button>
+              </div>
+              <span>Orizzonte</span>
+              <div class="seg" id="seg-horizon" role="group" aria-label="Orizzonte">
+                <button type="button" data-v="3" aria-pressed="true">3 ANNI</button>
+                <button type="button" data-v="1" aria-pressed="false">1 ANNO</button>
+              </div>
+            </div>
+          </div>
+          <div class="tscroll"><table class="t" id="cond-tbl"></table></div>
+        </div>
+
+        <div class="panel">
+          <div class="ph"><h2>Titolo per titolo</h2><span class="meta" id="single-n"></span></div>
+          <div class="tscroll"><table class="t" id="single-tbl"></table></div>
+          <p class="note" style="padding:6px 10px">Dove si trova <b>oggi</b> ogni titolo rispetto ai propri massimi e al proprio trend. <b>Attesa &minus;20%</b> &egrave; il tempo medio fra un ribasso del 20% e il successivo: se sono anni, aspettarlo non &egrave; una strategia.</p>
+        </div>
+
       </div>
-      <span class="seg-lab">Orizzonte</span>
-      <div class="seg" id="seg-horizon" role="group" aria-label="Orizzonte">
-        <button data-v="3" class="on" aria-pressed="true">3 anni</button>
-        <button data-v="1" aria-pressed="false">1 anno</button>
+
+      <div class="stack">
+        <div class="panel">
+          <div class="ph"><h2>Come leggere</h2><span class="meta">metodo</span></div>
+          <div class="pb">
+            <div class="acard"><div class="acard-h"><span class="sym">STESSI VERSAMENTI</span></div>
+              <div class="acard-t">Tutte le strategie ricevono lo stesso denaro alle stesse date e la liquidit&agrave; in attesa &egrave; remunerata al risk-free. Senza questo, chi resta liquido vince per finta.</div></div>
+            <div class="acard"><div class="acard-h"><span class="sym">TUTTE LE PARTENZE</span></div>
+              <div class="acard-t">Ogni confronto &egrave; ripetuto su tutte le date d&rsquo;inizio possibili, non su una sola. Conta la percentuale di partenze vinte, non il rendimento medio.</div></div>
+            <div class="acard"><div class="acard-h"><span class="sym">NIENTE LOOK-AHEAD</span></div>
+              <div class="acard-t">Massimo mobile e trend logaritmico sono stimati su finestra espansiva: al tempo t usano solo il passato.</div></div>
+            <div class="acard"><div class="acard-h"><span class="sym">CONTROLLO UNIVERSO</span></div>
+              <div class="acard-t">Accanto a ogni numero c&rsquo;&egrave; lo stesso calcolo su tutti i titoli eleggibili: distingue ci&ograve; che dipende dalla selezione da ci&ograve; che vale per il mercato.</div></div>
+            <div class="acard" style="border-bottom:0"><div class="acard-h"><span class="sym">OSSERVAZIONI</span></div>
+              <div class="acard-t">Le finestre sono sovrapposte e i titoli correlati: le osservazioni indipendenti sono molte meno di quante ne suggerisca il conteggio.</div></div>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="tbl-scroll"><table id="cond-tbl"></table></div>
-  </section>
 
-  <section class="sec">
-    <h2>Titolo per titolo <span class="pill" id="single-n"></span></h2>
-    <div class="desc">Dove si trova <b>oggi</b> ogni titolo rispetto ai propri massimi e al proprio trend, con quanto storicamente ha fatto aspettare chi voleva lo sconto. «Attesa −20%» è il tempo medio fra un ribasso del 20% e il successivo: se sono anni, aspettarlo non è una strategia.</div>
-    <div class="tbl-scroll"><table id="single-tbl"></table></div>
-  </section>
+  </main>
 
-  <div class="foot">coma-screener <b>v1.6.0</b> · analisi ingressi su storia piena, simulazione settimanale, liquidità al risk-free €STR<br>
-    Le statistiche condizionate sono calcolate su finestre sovrapposte e su titoli correlati: le osservazioni indipendenti sono molte meno di quante ne suggerisca il conteggio.<br>
-    <span class="muted">Backtest lordo di imposte. Non è una raccomandazione d'investimento.</span></div>
+  <footer class="statusline">
+    <span>Dati di fine giornata: Yahoo Finance, total return convertito in euro &middot; analisi su storia piena, simulazione settimanale &middot; risk-free &euro;STR</span>
+    <span>dati generati il <span id="gen-date">&ndash;</span></span>
+    <span class="discl">Strumento di studio: non &egrave; consulenza finanziaria n&eacute; una raccomandazione di investimento. I rendimenti passati non indicano quelli futuri.</span>
+  </footer>
 </div>
+
+<dialog class="modal-card" id="help-dlg">
+  <div class="ph"><h2>Guida</h2><button type="button" class="modal-close" id="help-close" aria-label="Chiudi la guida">&times;</button></div>
+  <div class="pb">
+    <p><b>Cosa misura.</b> Quando entrare, non se il portafoglio valga la pena: per quello guarda l&rsquo;alfa nello <a href="index.html">screener</a>.</p>
+    <p><b>Le due tabelle.</b> La prima chiede se convenga <i>aspettare</i> il ribasso; la seconda se il ribasso, <i>quando arriva</i>, sia un buon momento. Possono rispondere in modo opposto, ed &egrave; il risultato pi&ugrave; interessante: lo sconto &egrave; un buon momento, ma aspettarlo costa pi&ugrave; di quanto renda.</p>
+    <ul>
+      <li><b>Ribasso &minus;N%</b>: accumula e investe quando il titolo scende di N% dal massimo.</li>
+      <li><b>Sotto il trend</b>: investe quando il prezzo &egrave; sotto la propria retta logaritmica.</li>
+      <li><b>Rottura massimi</b>: investe sui nuovi massimi a 12 mesi.</li>
+    </ul>
+    <p class="note">Il point of control volumetrico non regge su queste scale: su un compounder a 15 anni cade dove il titolo non torner&agrave; mai. Qui la zona di valore &egrave; costruita sui residui dal trend.</p>
+  </div>
+</dialog>
 
 <script src="scripts/engine.js"></script>
 <script src="scripts/entry.js"></script>
+<script src="js/fmt.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/entry-app.js"></script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}</script>
