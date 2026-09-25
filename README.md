@@ -39,7 +39,9 @@ risk-free **variabile nel tempo** (€STR capitalizzato via `XEON.DE`, costante 
 
 - I risultati **in-sample** sono ottimistici per costruzione (survivorship + look-ahead): lo screening parte dai titoli oggi nell'indice con lunga storia.
 - Il **survivorship bias resta anche nell'out-of-sample**: l'elenco dei costituenti odierni non era conoscibile alla data di cutoff.
-- L'OOS è un **singolo fold** di 7 anni: non basta per distinguere skill da fortuna. Guardare il **t-stat dell'alfa**: sotto 2 non si può dire che ci sia un edge.
+- L'OOS è un **singolo fold** di 7 anni: non basta per distinguere skill da fortuna. Guardare il **t-stat dell'alfa** — e con sei cursori da esplorare la soglia onesta è **|t| > 3**, non 2 (Harvey, Liu e Zhu 2016).
+- L'**attribuzione fattoriale** mostra che il rendimento è in larga parte esposizione a qualità, profittabilità e basso beta: fattori remunerati e comprabili con un ETF, non bravura.
+- Le serie in euro partono dal **gennaio 1999** (cambi BCE) e comprendono sia la bolla dot-com sia il 2008. Restano però due crisi in un quarto di secolo: non è una distribuzione.
 - Il backtest è **lordo di tasse** (ritenuta sui dividendi, capital gain) e di costi di conversione valutaria.
 - Nessun dato **fondamentale** né di **valutazione** entra nella selezione: il modello sceglie sulla regolarità del prezzo passato, che è la conseguenza di un buon business, non la causa.
 

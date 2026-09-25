@@ -15,6 +15,7 @@ const path = require('path');
 const E = require('./engine');
 const X = require('./entry');
 const { fetchSeries, fetchMany } = require('./yahoo');
+const ECB = require('./ecbfx');
 
 const PPY = 252;
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -94,6 +95,13 @@ async function loadTickers(uname, cfg) {
 }
 
 // ---- FX -> EUR -------------------------------------------------------------
+/**
+ * Cambi verso l'euro. La fonte primaria e la BCE, che pubblica dal 4 gennaio
+ * 1999: le coppie di Yahoo partivano da dicembre 2003 e tagliavano fuori quasi
+ * cinque anni: il filtro "mai un quinquennio negativo" non poteva vedere la
+ * bolla dot-com, cioe proprio il tipo di evento che dovrebbe intercettare.
+ * Yahoo resta come riserva per le valute che la BCE non pubblica.
+ */
 async function buildFx(currencies) {
   const need = new Set();
   for (const c of currencies) {
@@ -101,7 +109,16 @@ async function buildFx(currencies) {
     if (ccy && ccy !== 'EUR') need.add(ccy);
   }
   const fx = {}; // ccy -> {ts:[], rate:[]}  (rate = unita di ccy per 1 EUR)
+  let bce = null;
+  try {
+    bce = await ECB.fetchAll();
+    log(`  cambi BCE: ${ECB.riepilogo(bce)}`);
+  } catch (e) {
+    log(`  WARN: cambi BCE non disponibili (${e.message}), uso Yahoo`);
+  }
   for (const ccy of need) {
+    if (bce && bce[ccy]) { fx[ccy] = bce[ccy]; continue; }
+    if (bce) log(`  ${ccy} non pubblicata dalla BCE, ripiego su Yahoo`);
     const s = await fetchSeries(`EUR${ccy}=X`);
     if (s) fx[ccy] = { ts: s.ts, rate: s.px };
     else log(`  WARN: FX EUR${ccy} non disponibile`);
@@ -539,8 +556,9 @@ async function generateBenchmarks() {
   // il browser deve riconvertire i rendimenti di portafoglio prima di regredire
   if (fx.USD && fx.USD.ts.length) {
     const m = toMonthly(fx.USD.ts, fx.USD.rate);
-    out.fx = { symbol: 'EURUSD=X', label: 'Dollari per euro', s: m.months[0],
-      p: m.vals.map((x) => +x.toFixed(6)) };
+    out.fx = { symbol: 'EUR/USD', label: 'Dollari per euro',
+      fonte: 'European Central Bank, euro foreign exchange reference rates',
+      s: m.months[0], p: m.vals.map((x) => +x.toFixed(6)) };
   }
 
   // serie risk-free EUR (€STR capitalizzato): serve al browser per Sharpe/alfa

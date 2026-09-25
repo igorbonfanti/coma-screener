@@ -54,8 +54,8 @@
     resampled: 'Max-Sharpe: ottimizza il rapporto rischio/rendimento (resampled, block bootstrap). Cerca i pesi migliori ma concentra di più.',
     rebal: 'Ritorno ai pesi target una volta l\'anno, pagando 0.15% sul controvalore scambiato (commissioni + spread).',
     buyhold: 'Comprato una volta e lasciato correre: i pesi driftano, zero costi di ribilanciamento. Coerente con la tesi "compra e dimentica".',
-    minYears: 'Anni minimi di quotazione richiesti: esclude i titoli troppo giovani. Massimo 22: le serie convertite in EUR partono da dicembre 2003, limite del cambio EUR/USD su Yahoo.',
-    tolerance5y: 'Perdita massima tollerata sul peggior quinquennio mobile (0% = mai negativo su 5 anni). Attenzione: i dati partono dal 2003, quindi questo filtro NON vede la bolla dot-com 2000-02.',
+    minYears: 'Anni minimi di quotazione richiesti: esclude i titoli troppo giovani. Massimo 27: le serie convertite in EUR partono dal gennaio 1999, inizio dei cambi di riferimento della BCE.',
+    tolerance5y: 'Perdita massima tollerata sul peggior quinquennio mobile (0% = mai negativo su 5 anni). Con i dati dal 1999 il filtro vede anche la bolla dot-com: e la soglia che scarta piu titoli di tutte.',
     minR2: 'Quanto la curva di prezzo (scala log) è vicina a una retta: più alto = crescita più regolare.',
     minCagr: 'Rendimento annuo composto minimo richiesto.',
     maxDD: 'Massima caduta dai massimi tollerata: più stretto = più difensivo.',
@@ -90,8 +90,8 @@
   // Tutti i filtri sono "passa se valore >= soglia", quindi le barre a destra
   // della soglia sono quelle che sopravvivono.
   const CTRLS = [
-    // max 22: le serie in EUR partono da dicembre 2003 (limite di EURUSD=X su Yahoo)
-    { k: 'minYears', label: 'Storia minima', min: 5, max: 22, step: 1, fmt: (v) => v + ' anni', get: (r) => r.days / 252 },
+    // max 27: le serie in EUR partono dal 4 gennaio 1999, inizio dei cambi BCE
+    { k: 'minYears', label: 'Storia minima', min: 5, max: 27, step: 1, fmt: (v) => v + ' anni', get: (r) => r.days / 252 },
     { k: 'tolerance5y', label: 'Tolleranza 5Y', min: -0.30, max: 0, step: 0.01, fmt: (v) => pct(v, 0), get: (r) => r.min5y },
     { k: 'minR2', label: 'R² minimo', min: 0.70, max: 0.99, step: 0.01, fmt: (v) => num(v, 2), get: (r) => r.r2 },
     { k: 'minCagr', label: 'CAGR minimo', min: 0, max: 0.25, step: 0.01, fmt: (v) => pct(v, 0), get: (r) => r.cagr },

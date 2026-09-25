@@ -117,7 +117,10 @@ setTimeout(() => {
     console.log('  ' + $('#bench-name').textContent + '\n');
   }
   ck($('#port-tbl').querySelectorAll('tr').length > 3, 'tabella portafoglio righe (live)');
-  ck($('#port-tbl').textContent.includes('MCD'), 'portafoglio contiene un pick noto (MCD)');
+  // niente ticker scritti a mano: la selezione cambia con i dati, ed e giusto cosi
+  const simboli = [...$('#port-tbl').querySelectorAll('tbody .sym')].map((e) => e.textContent.trim());
+  ck(simboli.length >= 2 && simboli.every((t) => /^[A-Z][A-Z0-9.\-]{0,6}$/.test(t)),
+    'portafoglio con ticker plausibili: ' + simboli.join(','));
   ck($('#universe-select').querySelectorAll('[data-u]').length === 3, '3 toggle universi (solo USA)');
   ck($('#universe-select').querySelectorAll('[data-preset]').length === 1, '1 preset');
   ck($('#screen-ctrls').querySelectorAll('input[type=range]').length === 6, '6 slider screening');

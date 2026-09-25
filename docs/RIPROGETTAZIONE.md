@@ -48,7 +48,7 @@ con licenza che consenta di committare i derivati in un repo pubblico.
 
 | Problema | Fonte | Stato |
 |---|---|---|
-| Cambi oltre il 2003 | **BCE `eurofxref-hist.zip`** + API ECB Data Portal | Serie euro dal 1999, nessuna chiave, un solo download. Riuso libero citando la fonte, purché il file grezzo non sia modificato. |
+| Cambi oltre il 2003 | **BCE `eurofxref-hist.zip`** | ✅ **Fatto** (`scripts/ecbfx.js`). 41 valute dal 4 gennaio 1999, nessuna chiave, un solo download da 640 KB. Yahoo resta come riserva per le valute che la BCE non pubblica. Il file grezzo non viene ridistribuito: si conservano solo le serie derivate, con la fonte citata. |
 | Fondamentali USA point-in-time | **SEC EDGAR `companyfacts`** + Financial Statement Data Sets | Gratuito, nessuna chiave, 10 richieste/s con User-Agent identificativo. **Nativamente point-in-time**: ogni fatto porta la data di deposito `filed`, quindi filtrando `filed <= data` si ottiene ciò che era noto allora, restatement escluse. Dati pubblici, ridistribuibili. Bulk dal 2009 (prima non c'è XBRL). |
 | Costituenti storici S&P 500 | **fja05680/sp500** (licenza MIT) | Dal 1996. **Ricostruito, non nativamente PIT**: il nucleo viene da un libro e gli aggiornamenti sono manuali. MIT consente la ridistribuzione. Da incrociare con la revision history di Wikipedia. |
 

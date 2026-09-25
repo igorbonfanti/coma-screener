@@ -459,14 +459,21 @@ Cosa è cambiato e perché:
   difensiva al mercato. Chi vuole quel profilo lo può ottenere con un ETF min-vol o
   semplicemente con 70% indice + 30% liquidità, senza rischio idiosincratico su 14 titoli.
 
-**Limite scoperto durante il lavoro:** le serie convertite in EUR partono tutte da
-**dicembre 2003**, perché è lì che inizia il cambio `EURUSD=X` su Yahoo (nessuna alternativa
-più lunga disponibile da questa fonte). Due conseguenze non banali:
+**Limite scoperto durante il lavoro, poi risolto:** le serie convertite in EUR partivano
+tutte da **dicembre 2003**, perché è lì che iniziava il cambio `EURUSD=X` su Yahoo. Il filtro
+"mai un quinquennio negativo" **non vedeva la bolla dot-com 2000-02**, cioè proprio il tipo di
+evento che dovrebbe intercettare.
 
-1. La storia massima utilizzabile è **22.6 anni**, non 30 — lo slider è stato limitato a 22.
-2. Il filtro "mai un quinquennio negativo" **non vede la bolla dot-com 2000-02**, cioè proprio
-   il tipo di evento che dovrebbe intercettare. Il filtro è quindi molto meno selettivo di
-   quanto sembri: il solo stress test rilevante nel campione è il 2008.
+Sostituita la fonte con i **cambi di riferimento della BCE** (`eurofxref-hist`), che partono dal
+**4 gennaio 1999**. L'effetto è grosso: la storia massima passa da 22,6 a **27,7 anni**, 343
+titoli dell'S&P 500 su 503 partono ora dal 1999, e soprattutto **il 96% dei titoli con almeno
+20 anni di storia ha adesso almeno un quinquennio negativo** (prima il campione vedeva solo il
+2008). Il portafoglio canonico dell'S&P 500 si è ridotto da 12 a 6 titoli, e il filtro sul
+quinquennio da solo ne scarta 407.
+
+È il risultato corretto: applicato a un campione che comprende la bolla dot-com, il criterio
+"azienda da coma" ammette quasi nessuno. Restano però due crisi in un quarto di secolo, che
+non fanno una distribuzione.
 
 ---
 
