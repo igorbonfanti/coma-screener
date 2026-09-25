@@ -9,8 +9,9 @@
   const F = window.ComaFmt;
   const pct = (x, d) => F.pct(x, d == null ? 1 : d);
   const num = (x, d) => F.num(x, d == null ? 2 : d);
+  // Solo USA: vedi js/app.js
   const BASES = [{ id: 'SP500', label: 'S&P 500' }, { id: 'NYSE', label: 'NYSE' },
-    { id: 'NASDAQ', label: 'NASDAQ' }, { id: 'STOXX600', label: 'STOXX 600' }];
+    { id: 'NASDAQ', label: 'NASDAQ' }];
 
   const state = { universe: 'SP500', source: 'oos', sched: 'lump', cond: 'dd', horizon: '3',
     entry: null, portfolio: null, tickers: [], fromUrl: null, hl: null };

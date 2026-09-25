@@ -189,5 +189,53 @@
       dropped: preAlign.used.length - postAlign.used.length, backtest: bt };
   }
 
-  window.ComaLive = { recompute, recomputeFromTickers, recomputeOOS };
+  // ---- attribuzione fattoriale ---------------------------------------------
+
+  /**
+   * Scompone il rendimento del portafoglio sui fattori, a scala:
+   * CAPM -> FF3 -> FF5+momentum -> +BAB+QMJ.
+   *
+   * Due accortezze senza le quali il risultato non vale niente:
+   *  - i fattori di French e AQR sono in DOLLARI, quindi la curva in euro va
+   *    riconvertita con il cambio del mese (P_usd = P_eur x dollari-per-euro);
+   *  - BAB e QMJ sono gli ultimi due proprio perche' la domanda e' se l'alfa
+   *    sopravvive a loro: su un portafoglio difensivo a beta basso, di solito no.
+   *
+   * `bt` = blocco di backtest (months + schemes), `fxSeg` = cambio mensile,
+   * `factors` = data/factors.json.
+   */
+  function attribution(bt, scheme, mode, fxSeg, factors) {
+    if (!bt || !factors || !factors.months || !fxSeg) return null;
+    const sc = bt.schemes && bt.schemes[scheme];
+    if (!sc) return null;
+    const eq = mode === 'buyhold' ? sc.buyhold : sc.rebal;
+    if (!eq || eq.length < 25) return null;
+
+    // curva in euro -> curva in dollari, mese per mese
+    const usd = [];
+    for (let i = 0; i < bt.months.length; i++) {
+      const gi = ymToIdx(bt.months[i]) - fxSeg.i0;
+      const tasso = gi >= 0 && gi < fxSeg.p.length ? fxSeg.p[gi] : null;
+      usd.push(tasso && tasso > 0 ? eq[i] * tasso : null);
+    }
+    // rendimenti in dollari allineati ai mesi dei fattori
+    const idx = {};
+    factors.months.forEach((m, i) => (idx[m] = i));
+    const rets = [], F = {};
+    const campi = ['mktrf', 'smb', 'hml', 'rmw', 'cma', 'wml', 'bab', 'qmj', 'rf'];
+    campi.forEach((c) => (F[c] = []));
+    for (let i = 1; i < usd.length; i++) {
+      if (!(usd[i - 1] > 0) || !(usd[i] > 0)) continue;
+      const chiave = bt.months[i].replace('-', '');
+      const j = idx[chiave];
+      if (j == null) continue;
+      rets.push(usd[i] / usd[i - 1] - 1);
+      campi.forEach((c) => F[c].push(factors.series[c][j]));
+    }
+    if (rets.length < 25) return null;
+    const scala = E.factorLadder(rets, F, PPY_M);
+    return { n: rets.length, da: bt.months[1], a: bt.months[bt.months.length - 1], scala };
+  }
+
+  window.ComaLive = { recompute, recomputeFromTickers, recomputeOOS, attribution };
 })();

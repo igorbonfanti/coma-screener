@@ -12,16 +12,16 @@
   const schemeLabel = { equal: 'Equipeso', invvol: 'Risk-parity', resampled: 'Max-Sharpe' };
 
   // basi selezionabili + priorita benchmark (la prima selezionata fa da bench)
+  // Solo USA: per l'Europa non esistono costituenti storici gratuiti ne
+  // fondamentali point-in-time, quindi un risultato non sarebbe validabile.
   const BASES = [
     { id: 'SP500', label: 'S&P 500' },
     { id: 'NYSE', label: 'NYSE' },
     { id: 'NASDAQ', label: 'NASDAQ' },
-    { id: 'STOXX600', label: 'STOXX 600' },
   ];
-  const BENCH_PRIORITY = ['SP500', 'NYSE', 'NASDAQ', 'STOXX600'];
+  const BENCH_PRIORITY = ['SP500', 'NYSE', 'NASDAQ'];
   const PRESETS = [
     { label: 'Tutti USA', set: ['SP500', 'NYSE', 'NASDAQ'] },
-    { label: 'USA + Europa', set: ['SP500', 'NYSE', 'NASDAQ', 'STOXX600'] },
   ];
 
   const DEFAULT_T = { minYears: 15, tolerance5y: -0.05, minR2: 0.90, minCagr: 0.10, maxDD: -0.45, topN: 20 };
@@ -29,20 +29,16 @@
   let state = { universes: ['SP500'], loaded: {}, merged: null, params: null, benchmarks: null,
     live: null, oos: null, period: 'oos', scheme: 'equal', mode: 'rebal',
     sortKey: 'quality', sortDir: -1, basket: new Set(), build: null, lastScreen: [],
-    hl: null, hist: null };
+    hl: null, hist: null, factors: null };
 
   // benchmark più congruente alla selezione di universi.
   // TUTTI total return: i titoli usano l'adjusted close (dividendi reinvestiti),
   // quindi un indice price-only (^GSPC, ^IXIC, ^STOXX) regalerebbe 1-3 pp/anno.
   function chooseBenchmark(unis) {
-    const eu = unis.includes('STOXX600');
-    const us = unis.filter((u) => ['SP500', 'NYSE', 'NASDAQ'].includes(u));
-    if (eu && us.length) return { sym: 'ACWI', label: 'MSCI ACWI TR (mondo)' };
-    if (eu) return { sym: 'EXSA.DE', label: 'STOXX Europe 600 TR' };
-    if (us.length === 1) return { SP500: { sym: '^SP500TR', label: 'S&P 500 Total Return' },
+    if (unis.length === 1) return { SP500: { sym: '^SP500TR', label: 'S&P 500 Total Return' },
       NASDAQ: { sym: '^XCMP', label: 'NASDAQ Composite TR' },
-      NYSE: { sym: 'VTI', label: 'US Total Market TR (proxy NYSE)' } }[us[0]];
-    return { sym: '^SP500TR', label: 'S&P 500 TR (proxy USA)' };
+      NYSE: { sym: 'VTI', label: 'US Total Market TR (proxy NYSE)' } }[unis[0]];
+    return { sym: 'VTI', label: 'US Total Market TR' };
   }
 
   // spiegazioni mostrate al passaggio del mouse (attributi title)
@@ -50,9 +46,7 @@
     SP500: 'Le ~500 maggiori aziende quotate USA (indice S&P 500).',
     NYSE: 'Titoli quotati al New York Stock Exchange (~2300).',
     NASDAQ: 'Titoli quotati al NASDAQ (~4000), forte presenza tech.',
-    STOXX600: 'Maggiori aziende europee (subset dello STOXX Europe 600).',
     preset0: 'Seleziona insieme S&P 500 + NYSE + NASDAQ.',
-    preset1: 'Seleziona tutti gli universi: USA + Europa.',
     oos: 'Out-of-sample: selezione fatta su dati passati (fino a ~7 anni fa) e testata sul periodo successivo. È il risultato più onesto.',
     insample: 'In-sample: selezione e test sullo stesso intero storico. Sempre ottimistico (circolare): usalo solo come riferimento.',
     equal: 'Equipeso: stesso peso a ogni titolo (1/N). Il più robusto, nessuna stima richiesta.',
@@ -252,7 +246,9 @@
     state.params = datasets[0].metrics.params;
     state.merged = {
       metrics: { rows, count: rows.length, updated },
-      curves: { series, bench: benchCurve, rf: (state.benchmarks && state.benchmarks.rf) || null },
+      curves: { series, bench: benchCurve,
+        rf: (state.benchmarks && state.benchmarks.rf) || null,
+        fx: (state.benchmarks && state.benchmarks.fx) || null },
       benchLabel: bm.label,
     };
     setDataDate(updated);
@@ -411,6 +407,75 @@
     $('#kpis-is').innerHTML = isHtml;
   }
 
+  /**
+   * Attribuzione fattoriale: la tabella che dice se l'alfa e bravura o
+   * esposizione a fattori gia noti. Si legge da sinistra a destra: l'alfa che
+   * sopravvive al mercato spesso non sopravvive a BAB (low-beta) e QMJ
+   * (qualita). E il test che in *Buffett's Alpha* azzera l'alfa di Berkshire.
+   */
+  function renderAttribution() {
+    const box = $('#attrib-tbl'), meta = $('#attrib-n');
+    if (!box) return;
+    const blk = currentBacktest();
+    const fx = state.merged && state.merged.curves.fx;
+    if (!blk || !state.factors || !fx) {
+      if (meta) meta.textContent = '';
+      box.innerHTML = emptyState('Attribuzione non disponibile',
+        !state.factors ? 'Il file dei fattori non e stato caricato.'
+          : 'Serve il cambio euro/dollaro per riportare i rendimenti nella valuta dei fattori.', 5);
+      return;
+    }
+    const seg = { i0: (() => { const [y, m] = fx.s.split('-').map(Number); return y * 12 + (m - 1); })(), p: fx.p };
+    const a = LIVE.attribution(blk, state.scheme, state.mode, seg, state.factors);
+    if (!a) {
+      if (meta) meta.textContent = '';
+      box.innerHTML = emptyState('Serie troppo corta',
+        'Servono almeno 25 mesi in comune fra il backtest e i fattori.', 5);
+      return;
+    }
+    if (meta) meta.textContent = `${a.n} mesi \u00b7 ${F.month(a.da)}\u2013${F.month(a.a)} \u00b7 in dollari`;
+    let h = '<thead><tr>' +
+      th('Modello', 'I fattori tolti al rendimento, uno strato alla volta.') +
+      th('Alfa annuo', 'Quello che resta dopo aver tolto i fattori del modello.', { r: 1 }) +
+      th('t-stat', 'Serve |t| > 3 per dichiarare una scoperta (Harvey, Liu e Zhu 2016): con 2 si raccolgono falsi positivi.', { r: 1 }) +
+      th('Beta mercato', 'Esposizione al mercato. Sotto 1 significa difensivo.', { r: 1 }) +
+      th('R\u00b2 corretto', 'Quanta parte del rendimento il modello spiega.', { r: 1 }) +
+      '</tr></thead><tbody>';
+    for (const m of a.scala) {
+      if (m.insufficiente) {
+        h += `<tr><td><span class="sym">${m.label}</span></td>` +
+          `<td colspan="4" class="muted">osservazioni insufficienti (${m.n})</td></tr>`;
+        continue;
+      }
+      const mkt = m.beta.find((b) => b.f === 'mktrf');
+      const solido = isFinite(m.alphaT) && Math.abs(m.alphaT) >= 3;
+      h += `<tr${m.id === 'full' ? ' class="sel"' : ''}><td><span class="sym">${m.label}</span></td>` +
+        `<td class="num r">${delta(m.alpha)}</td>` +
+        `<td class="num r"${solido ? '' : ' style="color:var(--ink-3)"'}>${num(m.alphaT, 2)}</td>` +
+        `<td class="num r">${mkt ? num(mkt.b, 2) : F.DASH}</td>` +
+        `<td class="num r">${pct(m.adjR2, 0)}</td></tr>`;
+    }
+    h += '</tbody>';
+    box.innerHTML = h;
+
+    // i coefficienti del modello completo, per leggere DA DOVE viene il rendimento
+    const full = a.scala.find((m) => m.id === 'full' && !m.insufficiente);
+    const det = $('#attrib-betas');
+    if (det) {
+      if (!full) det.innerHTML = '';
+      else {
+        const NOMI = { mktrf: 'Mercato', smb: 'Dimensione (SMB)', hml: 'Valore (HML)',
+          rmw: 'Profittabilita (RMW)', cma: 'Investimento (CMA)', wml: 'Momentum (WML)',
+          bab: 'Low-beta (BAB)', qmj: 'Qualita (QMJ)' };
+        det.innerHTML = full.beta.map((b) => {
+          const forte = isFinite(b.t) && Math.abs(b.t) >= 2;
+          return `<span class="fstep${forte ? ' keep' : ''}">${NOMI[b.f] || b.f} ` +
+            `<b class="num">${F.signed(b.b, 2)}</b> <span class="muted">t ${num(b.t, 1)}</span></span>`;
+        }).join('');
+      }
+    }
+  }
+
   function renderBacktest() {
     const blk = currentBacktest();
     const benchLabel = state.merged ? state.merged.benchLabel : '';
@@ -516,7 +581,7 @@
     $('#port-n').textContent = 'ricalcolo…';
     liveTimer = setTimeout(() => {
       recomputeLive(); recomputeOOS();
-      renderPortfolio(); renderKpis(); renderBacktest(); renderBasket();
+      renderPortfolio(); renderKpis(); renderBacktest(); renderAttribution(); renderBasket();
     }, 200);
   }
 
@@ -717,7 +782,7 @@
       (picks.length ? '&t=' + encodeURIComponent(picks.join(',')) : '');
   }
 
-  function renderAll() { renderKpis(); renderBacktest(); renderPortfolio(); renderScreenTable(); renderBasket(); updateEntryLink(); }
+  function renderAll() { renderKpis(); renderBacktest(); renderAttribution(); renderPortfolio(); renderScreenTable(); renderBasket(); updateEntryLink(); }
 
   function bindSeg(id, key, after) {
     $(id).addEventListener('click', (e) => {
@@ -805,15 +870,18 @@
     renderUniverseSelect();
     renderScreenCtrls();
     showLoading();
-    bindSeg('#seg-period', 'period', renderBacktest);
-    bindSeg('#seg-scheme', 'scheme', () => { renderKpis(); renderBacktest(); renderPortfolio(); renderBasket(); });
-    bindSeg('#seg-mode', 'mode', () => { renderKpis(); renderBacktest(); });
+    bindSeg('#seg-period', 'period', () => { renderBacktest(); renderAttribution(); });
+    bindSeg('#seg-scheme', 'scheme', () => { renderKpis(); renderBacktest(); renderAttribution(); renderPortfolio(); renderBasket(); });
+    bindSeg('#seg-mode', 'mode', () => { renderKpis(); renderBacktest(); renderAttribution(); });
     $('#btn-save').addEventListener('click', saveSnapshot);
     $('#btn-export').addEventListener('click', exportExcel);
     $('#btn-reset').addEventListener('click', resetFilters);
     ComaStore.init();
     renderSnapshots();
-    fetch('data/benchmarks.json').then((r) => r.json()).then((b) => { state.benchmarks = b; }).catch(() => {}).finally(loadAndMerge);
+    Promise.all([
+      fetch('data/benchmarks.json').then((r) => r.json()).catch(() => null),
+      fetch('data/factors.json').then((r) => r.json()).catch(() => null),
+    ]).then(([b, f]) => { state.benchmarks = b; state.factors = f; }).finally(loadAndMerge);
   }
   document.addEventListener('DOMContentLoaded', init);
 })();

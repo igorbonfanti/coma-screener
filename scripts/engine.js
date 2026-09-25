@@ -254,6 +254,127 @@
     return rows;
   }
 
+  // ---- regressione multivariata (attribuzione fattoriale) --------------------
+
+  /** Inversa di una matrice piccola con Gauss-Jordan e pivoting parziale. */
+  function invert(A) {
+    const n = A.length;
+    const M = A.map((r, i) => r.concat(Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))));
+    for (let c = 0; c < n; c++) {
+      let piv = c;
+      for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+      if (Math.abs(M[piv][c]) < 1e-12) return null;          // singolare
+      const t = M[c]; M[c] = M[piv]; M[piv] = t;
+      const d = M[c][c];
+      for (let j = 0; j < 2 * n; j++) M[c][j] /= d;
+      for (let r = 0; r < n; r++) {
+        if (r === c) continue;
+        const f = M[r][c];
+        if (!f) continue;
+        for (let j = 0; j < 2 * n; j++) M[r][j] -= f * M[c][j];
+      }
+    }
+    return M.map((r) => r.slice(n));
+  }
+
+  /**
+   * OLS di `y` su `X` (colonne SENZA intercetta: viene aggiunta) con errori
+   * standard Newey-West, che correggono autocorrelazione ed eteroschedasticita.
+   * Sui rendimenti mensili basta un lag di 3-4.
+   *
+   * Ritorna coefficienti, errori standard, t-stat, R2 e R2 corretto. Il primo
+   * coefficiente e l'intercetta, cioe l'ALFA per periodo.
+   */
+  function olsNW(y, X, lag) {
+    const n = y.length, k = X.length ? X[0].length + 1 : 1;
+    if (n <= k + 1) return null;
+    lag = lag == null ? Math.max(1, Math.round(4 * Math.pow(n / 100, 2 / 9))) : lag;
+    const D = [];                                   // matrice di disegno con intercetta
+    for (let i = 0; i < n; i++) D.push([1].concat(X[i]));
+    const XtX = Array.from({ length: k }, () => new Array(k).fill(0));
+    const Xty = new Array(k).fill(0);
+    for (let i = 0; i < n; i++) {
+      for (let a = 0; a < k; a++) {
+        Xty[a] += D[i][a] * y[i];
+        for (let b = a; b < k; b++) XtX[a][b] += D[i][a] * D[i][b];
+      }
+    }
+    for (let a = 0; a < k; a++) for (let b = 0; b < a; b++) XtX[a][b] = XtX[b][a];
+    const XtXinv = invert(XtX);
+    if (!XtXinv) return null;
+    const b = XtXinv.map((r) => r.reduce((s, v, j) => s + v * Xty[j], 0));
+    const u = y.map((v, i) => v - D[i].reduce((s, x, j) => s + x * b[j], 0));
+
+    // Newey-West: S = Gamma0 + somma pesata di (Gamma_j + Gamma_j')
+    const S = Array.from({ length: k }, () => new Array(k).fill(0));
+    for (let j = 0; j <= lag; j++) {
+      const w = j === 0 ? 1 : 1 - j / (lag + 1);   // pesi di Bartlett
+      const G = Array.from({ length: k }, () => new Array(k).fill(0));
+      for (let i = j; i < n; i++) {
+        const uu = u[i] * u[i - j];
+        for (let a = 0; a < k; a++) for (let c = 0; c < k; c++) G[a][c] += uu * D[i][a] * D[i - j][c];
+      }
+      for (let a = 0; a < k; a++) for (let c = 0; c < k; c++) {
+        S[a][c] += w * (j === 0 ? G[a][c] : G[a][c] + G[c][a]);
+      }
+    }
+    const V = XtXinv.map((r, a) => XtXinv.map((_, c) =>
+      S.reduce((s, Srow, p) => s + r[p] * Srow.reduce((s2, v, q) => s2 + v * XtXinv[q][c], 0), 0)));
+    const se = V.map((r, a) => Math.sqrt(Math.max(0, r[a])));
+
+    const my = mean(y);
+    const sst = sum(y.map((v) => (v - my) * (v - my)));
+    const sse = sum(u.map((v) => v * v));
+    const r2 = sst > 0 ? 1 - sse / sst : NaN;
+    return {
+      n, k, lag, coef: b, se,
+      t: b.map((v, i) => (se[i] > 0 ? v / se[i] : NaN)),
+      r2, adjR2: sst > 0 ? 1 - (1 - r2) * (n - 1) / (n - k) : NaN,
+    };
+  }
+
+  /**
+   * Attribuzione a scala: CAPM -> FF3 -> FF5+momentum -> +BAB+QMJ.
+   * Si legge l'incremento di R2 e soprattutto la MORTALITA DELL'ALFA a ogni
+   * passo: su un portafoglio a beta basso e ricco di difensivi, l'alfa che
+   * sopravvive al mercato spesso non sopravvive a BAB e QMJ.
+   *
+   * `rets` = rendimenti del portafoglio IN DOLLARI, allineati a `f` (i fattori).
+   * `f` = { mktrf, smb, hml, rmw, cma, wml, bab, qmj, rf } come array allineati.
+   */
+  const MODELLI = [
+    { id: 'capm', label: 'CAPM', cols: ['mktrf'] },
+    { id: 'ff3', label: 'Fama-French 3', cols: ['mktrf', 'smb', 'hml'] },
+    { id: 'ff5m', label: 'Fama-French 5 + momentum', cols: ['mktrf', 'smb', 'hml', 'rmw', 'cma', 'wml'] },
+    { id: 'full', label: '+ BAB + QMJ', cols: ['mktrf', 'smb', 'hml', 'rmw', 'cma', 'wml', 'bab', 'qmj'] },
+  ];
+
+  function factorLadder(rets, f, ppy, lag) {
+    ppy = ppy || 12;
+    const out = [];
+    for (const m of MODELLI) {
+      // tiene solo i periodi in cui TUTTI i regressori del modello esistono
+      const y = [], X = [];
+      for (let i = 0; i < rets.length; i++) {
+        if (!isFinite(rets[i]) || !isFinite(f.rf[i])) continue;
+        const riga = m.cols.map((c) => f[c][i]);
+        if (riga.some((v) => v == null || !isFinite(v))) continue;
+        y.push(rets[i] - f.rf[i]);                 // rendimento in eccesso
+        X.push(riga);
+      }
+      const r = olsNW(y, X, lag);
+      if (!r) { out.push({ id: m.id, label: m.label, insufficiente: true, n: y.length }); continue; }
+      out.push({
+        id: m.id, label: m.label, n: r.n, lag: r.lag,
+        alpha: r.coef[0] * ppy,                    // alfa annualizzato
+        alphaT: r.t[0],
+        beta: m.cols.map((c, j) => ({ f: c, b: r.coef[j + 1], t: r.t[j + 1] })),
+        r2: r.r2, adjR2: r.adjR2,
+      });
+    }
+    return out;
+  }
+
   /** Calcola tutte le metriche per una serie di prezzi. `rf` = numero o serie. */
   function metricsFor(prices, ppy, rf) {
     const c = cagr(prices, ppy);
@@ -510,6 +631,7 @@
     rng, cagr, periodReturns, annualizedVol, downsideVol, maxDrawdown,
     rollingMinReturn, logLinearityR2, logResidStd, percentileRanks, addQualityScore,
     rfPerPeriod, excessReturns, annualizedRf, sharpeRatio, sortinoRatio, regress,
+    invert, olsNW, factorLadder, MODELLI,
     metricsFor, screen,
     colMeans, covMatrix, portfolioStats, projectCappedSimplex, maxSharpe,
     equalWeights, inverseVolWeights, blockBootstrap, resampledWeights, computeWeights,

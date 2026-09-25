@@ -519,8 +519,6 @@ const BENCHMARKS = {
   '^SP500TR': 'S&P 500 Total Return',
   '^XCMP': 'NASDAQ Composite Total Return',
   'VTI': 'US Total Market TR (proxy NYSE)',
-  'EXSA.DE': 'STOXX Europe 600 TR',
-  'ACWI': 'MSCI ACWI TR (mondo)',
 };
 async function generateBenchmarks() {
   log('Genero benchmarks.json...');
@@ -537,6 +535,14 @@ async function generateBenchmarks() {
     const m = toMonthly(e.ts, e.px);
     out.series[sym] = { label: BENCHMARKS[sym], s: m.months[0], p: m.vals.map((x) => +x.toFixed(4)) };
   }
+  // cambio EUR/USD mensile: i fattori di French e AQR sono in dollari, quindi
+  // il browser deve riconvertire i rendimenti di portafoglio prima di regredire
+  if (fx.USD && fx.USD.ts.length) {
+    const m = toMonthly(fx.USD.ts, fx.USD.rate);
+    out.fx = { symbol: 'EURUSD=X', label: 'Dollari per euro', s: m.months[0],
+      p: m.vals.map((x) => +x.toFixed(6)) };
+  }
+
   // serie risk-free EUR (€STR capitalizzato): serve al browser per Sharpe/alfa
   const rfRaw = await fetchSeries(RF_SYMBOL);
   if (rfRaw) {
@@ -545,7 +551,8 @@ async function generateBenchmarks() {
   } else log(`  WARN: risk-free ${RF_SYMBOL} non disponibile`);
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(path.join(DATA_DIR, 'benchmarks.json'), JSON.stringify(out));
-  log(`Scritto benchmarks.json (${Object.keys(out.series).length} indici${out.rf ? ' + risk-free' : ''})`);
+  log(`Scritto benchmarks.json (${Object.keys(out.series).length} indici` +
+    `${out.rf ? ' + risk-free' : ''}${out.fx ? ' + cambio' : ''})`);
 }
 
 (async () => {

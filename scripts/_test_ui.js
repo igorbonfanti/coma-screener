@@ -75,6 +75,14 @@ setTimeout(() => {
   ck(/\d{2}\/\d{4}\u2013\d{2}\/\d{4}/.test($('#port-n').textContent),
     'portafoglio mostra la finestra fissa: ' + $('#port-n').textContent);
   // struttura tabelle: thead/tbody per l'intestazione sticky
+  // attribuzione fattoriale: la scala dei modelli e i coefficienti
+  ck($('#attrib-tbl').querySelectorAll('tbody tr').length === 4, 'quattro modelli nella scala');
+  ck($('#attrib-tbl').textContent.includes('BAB') && $('#attrib-tbl').textContent.includes('QMJ'),
+    'la scala arriva a BAB e QMJ');
+  ck($('#attrib-n').textContent.includes('in dollari'),
+    'attribuzione dichiarata in dollari: ' + $('#attrib-n').textContent);
+  ck($('#attrib-betas').textContent.includes('Low-beta') && $('#attrib-betas').textContent.includes('Qualit'),
+    'coefficienti dei fattori mostrati');
   ck($('#port-tbl').querySelector('thead') && $('#port-tbl').querySelector('tbody'), 'portafoglio ha thead+tbody');
   ck($('#screen-tbl').querySelector('thead'), 'screening ha thead');
   ck($('#screen-summary').querySelector('.funnel'), 'imbuto dei filtri renderizzato');
@@ -98,12 +106,20 @@ setTimeout(() => {
     console.log('\n-- KPI live (SP500, mensile) --');
     [...$('#kpis').children].forEach((c) => console.log('  • ' + c.textContent.replace(/\s+/g, ' ').trim()));
     console.log('  portafoglio: ' + $('#port-n').textContent);
+    console.log('');
+    console.log('-- ATTRIBUZIONE FATTORIALE (' + $('#attrib-n').textContent + ') --');
+    [...$('#attrib-tbl').querySelectorAll('tbody tr')].forEach(function (r) {
+      console.log('  ' + [...r.children].map(function (c) {
+        return c.textContent.trim().padEnd(14);
+      }).join(''));
+    });
+    console.log('  coefficienti: ' + $('#attrib-betas').textContent.replace(/\s+/g, ' ').trim());
     console.log('  ' + $('#bench-name').textContent + '\n');
   }
   ck($('#port-tbl').querySelectorAll('tr').length > 3, 'tabella portafoglio righe (live)');
   ck($('#port-tbl').textContent.includes('MCD'), 'portafoglio contiene un pick noto (MCD)');
-  ck($('#universe-select').querySelectorAll('[data-u]').length === 4, '4 toggle universi');
-  ck($('#universe-select').querySelectorAll('[data-preset]').length === 2, '2 preset');
+  ck($('#universe-select').querySelectorAll('[data-u]').length === 3, '3 toggle universi (solo USA)');
+  ck($('#universe-select').querySelectorAll('[data-preset]').length === 1, '1 preset');
   ck($('#screen-ctrls').querySelectorAll('input[type=range]').length === 6, '6 slider screening');
   ck(/^\d{2}\/\d{2}\/\d{4}$/.test($('#updated').textContent),
     'data dei dati gg/mm/aaaa: ' + $('#updated').textContent);
@@ -140,7 +156,8 @@ setTimeout(() => {
     const countMerged = state_count();
     ck(countMerged > countSP, `merge universi: analizzati ${countSP} -> ${countMerged}`);
     ck($('#universe-select').querySelectorAll('[data-u][aria-pressed="true"]').length === 2, '2 universi attivi');
-    ck($('#bench-name').textContent.includes('proxy USA'), 'benchmark combo USA = S&P 500 proxy');
+    ck($('#bench-name').textContent.includes('US Total Market'),
+      'benchmark della combo = mercato USA totale: ' + $('#bench-name').textContent);
     ck($('#kpis').children.length >= 2 && $('#verdict').querySelector('.verdict'), 'OOS live anche su combo');
     ck($('#port-tbl').querySelectorAll('tr').length > 3, 'portafoglio su combo');
 

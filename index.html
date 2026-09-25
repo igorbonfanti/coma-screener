@@ -98,6 +98,17 @@
         </div>
 
         <div class="panel">
+          <div class="ph"><h2>Da dove viene il rendimento</h2><span class="meta" id="attrib-n"></span></div>
+          <p class="note" style="padding:8px 10px 0">Il rendimento viene scomposto sui fattori noti, uno strato alla volta. Si legge dall&rsquo;alto in basso: l&rsquo;alfa che sopravvive al mercato spesso non sopravvive a <b>BAB</b> (premio del basso beta) e <b>QMJ</b> (premio della qualit&agrave;). &Egrave; il test che in <i>Buffett&rsquo;s Alpha</i> azzera l&rsquo;alfa di Berkshire, e questo portafoglio ha lo stesso profilo: beta sotto 1, pieno di difensivi.</p>
+          <div class="tscroll"><table class="t" id="attrib-tbl"></table></div>
+          <div class="funnel" id="attrib-betas" style="border-bottom:0"></div>
+          <div class="legend">
+            <span class="muted">Fattori: Kenneth French Data Library (North America) e AQR Datasets (USA), in dollari. I rendimenti del portafoglio sono riconvertiti con il cambio del mese.</span>
+            <span class="muted">Soglia di significativit&agrave; |t| &gt; 3 (Harvey, Liu e Zhu 2016), non 2: con sei cursori si esplorano molte configurazioni.</span>
+          </div>
+        </div>
+
+        <div class="panel">
           <div class="ph"><h2>Portafoglio</h2><span class="meta" id="port-n"></span></div>
           <div class="tscroll"><table class="t" id="port-tbl"></table></div>
           <p class="note" style="padding:6px 10px">La colonna <b>Curva</b> mostra l&rsquo;andamento sulla finestra di test: &egrave; ci&ograve; che la metodologia chiama regolarit&agrave;. Pesi con tetto 20% e minimo 2% per titolo.</p>
