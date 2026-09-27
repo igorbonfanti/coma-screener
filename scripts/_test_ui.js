@@ -8,6 +8,17 @@ const { JSDOM } = require('jsdom');
 const ROOT = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
+// La marcatura di versione degli script deve essere aggiornata: se e vecchia,
+// dopo una pubblicazione il browser puo tenersi il JavaScript precedente per
+// dieci minuti (Pages serve con max-age=600) e l'app sembra rotta.
+try {
+  require('child_process').execFileSync(process.execPath,
+    [path.join(__dirname, 'stamp.js'), '--check'], { stdio: 'pipe' });
+} catch (e) {
+  console.error((e.stderr || Buffer.from('')).toString().trim() || 'marcatura di versione non aggiornata');
+  process.exit(1);
+}
+
 const html = read('index.html');
 const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
 const { window } = dom;

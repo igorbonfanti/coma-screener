@@ -34,11 +34,17 @@ jobs:
       - name: Rigenera dataset (S&P500 + NASDAQ + NYSE)
         run: node scripts/fetch_data.js SP500 NASDAQ NYSE
 
+      # Gli script portano ?v=<impronta del contenuto>. Pages serve con
+      # max-age=600: senza la marcatura, per dieci minuti dopo una pubblicazione
+      # il browser puo usare il JavaScript vecchio con l'HTML nuovo.
+      - name: Marca gli script con la versione di contenuto
+        run: node scripts/stamp.js
+
       - name: Commit dati aggiornati
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
+          git add data/ index.html entry.html
           if git diff --cached --quiet; then
             echo "Nessun cambiamento nei dati."
           else

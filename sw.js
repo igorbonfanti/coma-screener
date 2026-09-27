@@ -14,7 +14,7 @@
  * versione pubblicata, offline si vede l'ultima vista. Su un'app di poche
  * centinaia di kilobyte il costo in velocita e trascurabile.
  * ========================================================================== */
-const VERSION = 'coma-v10';
+const VERSION = 'coma-v11';
 const SHELL = [
   './', './index.html', './entry.html', './manifest.json', './icon.svg',
   './css/terminale.css', './css/coma.css',
@@ -59,6 +59,9 @@ self.addEventListener('fetch', (e) => {
         }
         return r;
       })
-      .catch(() => caches.match(e.request).then((c) => c || caches.match('./index.html')))
+      // ignoreSearch: la pagina chiede js/app.js?v=abc123, la cache contiene
+      // js/app.js. Senza questo, offline non si troverebbe mai nulla.
+      .catch(() => caches.match(e.request, { ignoreSearch: true })
+        .then((c) => c || caches.match('./index.html')))
   );
 });

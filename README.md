@@ -58,6 +58,8 @@ node scripts/_test_entry_ui.js       # smoke test pagina "Come entrare"
 node scripts/fetch_data.js SP500     # rigenera un universo
 node scripts/factors.js              # fattori: scarica solo se le fonti sono cambiate
 node scripts/factors.js --force      # ... oppure riscarica comunque
+node scripts/stamp.js                # marca script e CSS con la versione di contenuto
+node scripts/stamp.js --check        # verifica che la marcatura sia aggiornata
 node scripts/_serve.js               # preview locale su :8099
 ```
 
@@ -68,4 +70,6 @@ La [GitHub Action](.github/workflows/update-data.yml) gira ogni lunedì e fa due
 1. **Fattori** (`scripts/factors.js`). Escono una volta al mese, quindi lo script chiede prima alle fonti — con una richiesta `HEAD` — se data di modifica e lunghezza sono cambiate, e scarica solo in quel caso. Anche quando riscarica, riscrive il file solo se il *contenuto* è diverso: altrimenti un `updated` nuovo produrrebbe un commit fasullo ogni settimana. Se fallisce non blocca il resto, e se le fonti tacciono da più di tre mesi lo dice nel log.
 2. **Prezzi e metriche** (`scripts/fetch_data.js`) per i tre universi.
 
-Il commit finale parte solo se qualcosa in `data/` è davvero cambiato. Da *Actions → Update data → Run workflow* si può forzare il riscaricamento dei fattori.
+3. **Marcatura di versione** (`scripts/stamp.js`). Ogni `<script>` e `<link>` locale porta `?v=<impronta del contenuto>`. GitHub Pages serve con `Cache-Control: max-age=600`: senza la marcatura, per dieci minuti dopo una pubblicazione il browser può usare il JavaScript vecchio insieme all'HTML nuovo, e l'app sembra rotta pur essendo corretta. Il service worker network-first non basta, perché la sua richiesta di rete passa comunque dalla cache HTTP. L'impronta è del contenuto dei file, non dello sha del commit: cambia esattamente quando serve, e `_test_ui.js` si rifiuta di girare se è vecchia.
+
+Il commit finale parte solo se qualcosa è davvero cambiato. Da *Actions → Update data → Run workflow* si può forzare il riscaricamento dei fattori.
