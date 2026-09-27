@@ -60,7 +60,15 @@ const $ = (s) => window.document.querySelector(s);
 const fail = [];
 const ck = (cond, name) => { if (!cond) fail.push(name); };
 
-setTimeout(() => {
+// il ventaglio delle partenze si calcola dopo il primo disegno: si attende
+// che sia pronto invece di indovinare un ritardo
+function quandoProntoIlVentaglio(fn, tentativi) {
+  const t = $('#fan-tbl');
+  if ((t && t.querySelectorAll('tbody [data-fan]').length) || (tentativi || 0) > 40) return fn();
+  setTimeout(() => quandoProntoIlVentaglio(fn, (tentativi || 0) + 1), 50);
+}
+
+quandoProntoIlVentaglio(() => {
   // stato iniziale (SP500, IS+OOS live)
   ck($('#kpis').children.length >= 2, 'KPI out-of-sample popolati');
   ck($('#kpis-is').children.length >= 2, 'KPI in-sample popolati (blocco separato)');
@@ -98,6 +106,25 @@ setTimeout(() => {
   $('#start-select').querySelector('[data-start=""]').click();
   ck(+($('#screen-summary').textContent.match(/Passati (\d+)/) || [])[1] === passatiTutto,
     'tornando a tutta la storia il paniere torna quello di prima');
+
+  // ventaglio delle partenze: e l'istruzione visiva del compromesso
+  const fan = $('#fan-tbl').querySelectorAll('tbody tr');
+  ck(fan.length === 18, 'diciotto partenze nel ventaglio: ' + fan.length);
+  const cella = (r, i) => fan[r].children[i].textContent.trim();
+  const passaAnno = (r) => +cella(r, 4);
+  ck(passaAnno(0) < passaAnno(11), `il paniere cresce togliendo le crisi: ${passaAnno(0)} -> ${passaAnno(11)}`);
+  ck(cella(0, 2).includes('dot-com') && !cella(11, 2).includes('dot-com'),
+    'le crisi incluse si riducono scorrendo il ventaglio');
+  // una crisi conta solo se la finestra ne contiene la maggior parte
+  ck(cella(9, 2).includes('Lehman') && !cella(10, 2).includes('Lehman'),
+    'dal 2009 Lehman non conta piu: se ne prenderebbe solo il minimo');
+  ck($('#fan-tbl').querySelector('tr.sel'), 'la partenza corrente e marcata nel ventaglio');
+  // cliccare una riga cambia davvero la finestra
+  $('#fan-tbl').querySelector('[data-fan="2009"]').click();
+  ck($('#window-info').textContent.includes('01/2009'), 'cliccando il ventaglio cambia la finestra');
+  ck($('#fan-tbl').querySelector('tr.sel').children[0].textContent.trim() === '2009',
+    'la riga cliccata diventa quella selezionata');
+  $('#start-select').querySelector('[data-start=""]').click();
 
   // attribuzione fattoriale: la scala dei modelli e i coefficienti
   ck($('#attrib-tbl').querySelectorAll('tbody tr').length === 4, 'quattro modelli nella scala');
@@ -218,4 +245,4 @@ setTimeout(() => {
       process.exit(fail.length || errors.length ? 1 : 0);
     }, 500);
   }, 600);
-}, 700);
+});

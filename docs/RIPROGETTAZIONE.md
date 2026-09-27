@@ -280,8 +280,46 @@ La validazione out-of-sample si adatta: con una finestra corta la storia richies
 taglio si riduce (fino a un minimo di 5 anni, sotto il quale la validazione viene rifiutata) e
 il verdetto dichiara su quanti anni la selezione e' stata fatta.
 
+
+### Il ventaglio delle partenze
+
+Implementato come pannello a se: una riga per ogni anno d'inizio dal 1999 al 2016, con le
+soglie correnti. La storia minima richiesta viene ridotta a quella disponibile in ciascuna
+finestra, altrimenti le partenze recenti risulterebbero vuote per quel motivo e non per il
+merito del filtro.
+
+Sull'S&P 500, con le soglie di default:
+
+| Da | Anni | Crisi incluse | Blocchi 5a | Passano | vs 1999 | Scarto quinquennio | Nuovi |
+|---|---|---|---|---|---|---|---|
+| 1999 | 28 | dot-com, Lehman, Covid, 2022 | 4 | 23 | 1,0x | 80% | – |
+| 2003 | 24 | Lehman, Covid, 2022 | 3 | 35 | 1,5x | 74% | 7 |
+| 2007 | 20 | Lehman, Covid, 2022 | 2 | 50 | 2,2x | 59% | 11 |
+| 2008 | 19 | Lehman, Covid, 2022 | 2 | 88 | 3,8x | 49% | 13 |
+| **2009** | 18 | Covid, 2022 | 2 | **131** | **5,7x** | 44% | 16 |
+| 2010 | 17 | Covid, 2022 | 2 | 133 | 5,8x | 44% | 17 |
+| 2012 | 15 | Covid, 2022 | 1 | 128 | 5,6x | 45% | 18 |
+| 2016 | 11 | Covid, 2022 | 1 | 83 | 3,6x | 39% | 15 |
+
+Due cose che si vedono solo guardando il ventaglio intero, e non una finestra alla volta:
+
+1. **Il salto e fra il 2008 e il 2009**, non fra il 2009 e il 2010. Chi parte dal 2008
+   attraversa ancora il crollo; chi parte dal 2009 ne prende solo il minimo. Il paniere passa
+   da 88 a 131 esattamente li.
+2. **Il paniere non cresce all'infinito.** Tocca il massimo fra il 2010 e il 2012 e poi cala,
+   perche le finestre corte non soddisfano piu il requisito di storia minima. Chi cercasse il
+   paniere piu ampio possibile finirebbe per scegliere proprio la finestra con due blocchi
+   indipendenti e nessuna crisi vera.
+
+Il conteggio delle crisi usa una regola di sovrapposizione: una crisi conta come vissuta solo
+se la finestra ne contiene **piu di meta**. Con il solo confronto sulla data di fine, partire
+dal gennaio 2009 sarebbe risultato "con Lehman dentro" pur avendone preso i soli ultimi tre
+mesi, cioe il minimo e non il crollo.
+
+Ogni riga e cliccabile e imposta quella finestra.
+
 ### Cosa manca ancora qui
 
-- **Il ventaglio di tutte le partenze**: una tabella con una riga per anno d'inizio e, per ciascuna, titoli superstiti, tasso di scarto, crisi incluse. Vedere la monotonia in un colpo d'occhio e' piu' efficace di leggerla una finestra alla volta.
+- ~~**Il ventaglio di tutte le partenze**~~ — fatto, vedi sopra. Restava:: una tabella con una riga per anno d'inizio e, per ciascuna, titoli superstiti, tasso di scarto, crisi incluse. Vedere la monotonia in un colpo d'occhio e' piu' efficace di leggerla una finestra alla volta.
 - **Il contatore delle finestre ispezionate** nella sessione, da riportare nel conteggio delle prove per il Deflated Sharpe.
 - **Lo sdoppiamento del criterio**: far girare il filtro anti-drawdown sempre sulla storia massima e lasciare che la data scelta agisca solo sulle metriche descrittive. Darebbe la vista sul periodo desiderato senza indebolire la selezione. E' la variante metodologicamente piu' solida, ma risponde a una domanda diversa da quella posta.

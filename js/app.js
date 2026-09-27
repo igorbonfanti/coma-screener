@@ -30,7 +30,7 @@
     live: null, oos: null, period: 'oos', scheme: 'equal', mode: 'rebal',
     sortKey: 'quality', sortDir: -1, basket: new Set(), build: null, lastScreen: [],
     hl: null, hist: null, factors: null,
-    start: null, rows: [], rowsFull: [], passFull: null, soloTroncamento: [] };
+    start: null, rows: [], rowsFull: [], passFull: null, soloTroncamento: [], fan: null };
 
   /**
    * Le crisi che la finestra puo contenere o escludere. Servono a rendere
@@ -273,6 +273,10 @@
     renderStartControl();
     renderScreenCtrls();
     recomputeLive(); recomputeOOS(); renderAll();
+    // il ventaglio costa quasi un secondo sull'unione dei tre universi: si
+    // calcola dopo il primo disegno, cosi la pagina non aspetta
+    state.fan = null; renderFan();
+    setTimeout(() => { computeFan(); renderFan(); }, 0);
   }
 
   /** Data dei dati e badge di freschezza nella barra comandi. */
@@ -367,8 +371,8 @@
     const box = $('#window-info');
     if (!box) return;
     const inizio = state.start || '1999-01';
-    const dentro = CRISI.filter((c) => c.a >= inizio);
-    const fuori = CRISI.filter((c) => c.a < inizio);
+    const dentro = crisiIncluse(inizio);
+    const fuori = CRISI.filter((c) => dentro.indexOf(c) < 0);
     const tot = state.rows.length;
     const scartati = res ? res.skipped.cinqueY : 0;
     const quota = tot ? scartati / tot : 0;
@@ -404,6 +408,112 @@
           `${state.soloTroncamento.length > 8 ? ' e altri' : ''}</span></span>` : '') +
       confronto +
       (debole ? '<span class="fstep cut">In questa finestra quel criterio non seleziona quasi nulla: il paniere e piu ampio perche la soglia e diventata facile, non perche i titoli siano migliori.</span>' : '');
+  }
+
+  /**
+   * Il ventaglio delle partenze: una riga per anno d'inizio, con quanti titoli
+   * sopravvivono e quanto il filtro sta ancora scartando.
+   *
+   * Serve a vedere in un colpo d'occhio cio che una finestra alla volta si puo
+   * fingere di non notare: il paniere cresce in modo monotono man mano che si
+   * tolgono le crisi, e cresce perche il test si indebolisce. La colonna
+   * "Nuovi" conta i titoli che passano solo grazie al troncamento.
+   *
+   * Le metriche per ogni partenza costano quasi un secondo sull'unione dei tre
+   * universi, quindi si calcolano una volta sola e restano in cache: al variare
+   * delle soglie basta ri-screenare, che costa un paio di millisecondi.
+   */
+  const FAN_DA = 1999, FAN_A = 2016;
+
+  function computeFan() {
+    if (!state.merged) { state.fan = null; return; }
+    const rfSeg = state.merged.curves.rf
+      ? { i0: ymToIdxApp(state.merged.curves.rf.s), p: state.merged.curves.rf.p } : null;
+    const oggi = ymToIdxApp(new Date().toISOString().slice(0, 7));
+    const out = [];
+    for (let y = FAN_DA; y <= FAN_A; y++) {
+      const ym = y + '-01';
+      const anni = (oggi - ymToIdxApp(ym) + 1) / 12;
+      out.push({ ym, anno: y, anni,
+        rows: LIVE.metricsFrom(state.merged.curves, y === FAN_DA ? null : ym, rfSeg) });
+    }
+    state.fan = out;
+  }
+
+  function renderFan() {
+    const box = $('#fan-tbl'), meta = $('#fan-n');
+    if (!box) return;
+    if (!state.fan) {
+      if (meta) meta.textContent = 'calcolo in corso';
+      if (window.ComaUI) ComaUI.skeletonRows(6, '#fan-tbl', 8);
+      return;
+    }
+    // stesse soglie ovunque, tranne la storia minima che non puo superare la
+    // finestra: altrimenti le partenze recenti risulterebbero vuote per quello
+    // e non per il merito del filtro
+    const righe = state.fan.map((f) => {
+      const minY = Math.min(T.minYears, Math.floor(f.anni));
+      const res = E.screen(f.rows, { ...T, minYears: minY, ppy: 12, sortBy: 'quality' });
+      return { f, minY, res, quota: f.rows.length ? res.skipped.cinqueY / f.rows.length : 0 };
+    });
+    const base = righe[0];
+    const baseSet = new Set(base.res.picks.map((r) => r.t));
+    if (meta) meta.textContent = righe.length + ' partenze · soglie correnti';
+    let h = '<thead><tr>' +
+      th('Analisi da', 'Anno di inizio della finestra. Clicca una riga per usarla.') +
+      th('Anni', 'Ampiezza della finestra.', { r: 1 }) +
+      th('Crisi incluse', 'Quali crisi restano dentro la finestra.') +
+      th('Blocchi 5a', 'Osservazioni indipendenti per un criterio a finestre mobili di cinque anni: circa (anni meno 5) diviso 5.', { r: 1 }) +
+      th('Passano', 'Titoli che superano tutte le soglie.', { r: 1 }) +
+      th('Rispetto al 1999', 'Quante volte il paniere e piu ampio che con la storia piena.', { r: 1 }) +
+      th('Scarto quinquennio', 'Quota di universo scartata dal filtro sul quinquennio: e la misura del suo potere discriminante.', { r: 1 }) +
+      th('Nuovi', 'Titoli che passano solo grazie al troncamento, cioe che con la storia piena non passerebbero.', { r: 1 }) +
+      '</tr></thead><tbody>';
+    for (const r of righe) {
+      const sel = (state.start || '1999-01') === (r.f.anno === FAN_DA ? '1999-01' : r.f.ym);
+      const dentro = crisiIncluse(r.f.ym);
+      const nuovi = r.res.picks.filter((p) => !baseSet.has(p.t)).length;
+      const rapporto = base.res.passed ? r.res.passed / base.res.passed : null;
+      const indip = Math.max(0, Math.floor((r.f.anni - 5) / 5));
+      h += '<tr data-fan="' + r.f.anno + '" tabindex="0"' + (sel ? ' class="sel"' : '') + '>' +
+        '<td><span class="sym">' + r.f.anno + '</span></td>' +
+        '<td class="num r">' + num(r.f.anni, 0) + '</td>' +
+        '<td class="muted">' + (dentro.length ? dentro.map((c) => c.nome).join(' · ') : 'nessuna') + '</td>' +
+        '<td class="num r' + (indip <= 2 ? ' down' : '') + '">' + indip + '</td>' +
+        '<td class="num r"><b>' + r.res.passed + '</b></td>' +
+        '<td class="num r">' + (rapporto == null ? F.DASH : num(rapporto, 1) + '×') + '</td>' +
+        '<td class="num r' + (r.quota < 0.25 ? ' down' : '') + '">' + pct(r.quota, 0) + '</td>' +
+        '<td class="num r">' + (nuovi || F.DASH) + '</td></tr>';
+    }
+    box.innerHTML = h + '</tbody>';
+    box.querySelectorAll('[data-fan]').forEach((el) => {
+      const vai = () => {
+        const a = +el.dataset.fan;
+        state.start = a === FAN_DA ? null : a + '-01';
+        state.basket.clear();
+        clampMinYears(); recomputeRows();
+        renderStartControl(); renderScreenCtrls();
+        recomputeLive(); recomputeOOS(); renderAll();
+      };
+      el.addEventListener('click', vai);
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); vai(); } });
+    });
+  }
+
+  /**
+   * Una crisi conta come vissuta solo se la finestra ne contiene piu di meta.
+   * Il confronto sulla sola data di fine direbbe che partendo dal gennaio 2009
+   * si e "attraversato Lehman", mentre di quel crollo si sarebbe preso solo il
+   * minimo: esattamente il pezzo che fa sembrare tutto facile.
+   */
+  function crisiIncluse(startYM) {
+    const idx = (s) => { const [y, m] = s.split('-').map(Number); return y * 12 + (m - 1); };
+    const inizio = idx(startYM);
+    return CRISI.filter((c) => {
+      const durata = idx(c.a) - idx(c.da) + 1;
+      const dentro = idx(c.a) - Math.max(inizio, idx(c.da)) + 1;
+      return dentro > durata / 2;
+    });
   }
 
   function renderUniverseSelect() {
@@ -927,7 +1037,7 @@
       (picks.length ? '&t=' + encodeURIComponent(picks.join(',')) : '');
   }
 
-  function renderAll() { renderKpis(); renderBacktest(); renderAttribution(); renderPortfolio(); renderScreenTable(); renderBasket(); updateEntryLink(); }
+  function renderAll() { renderKpis(); renderBacktest(); renderAttribution(); renderPortfolio(); renderScreenTable(); renderFan(); renderBasket(); updateEntryLink(); }
 
   function bindSeg(id, key, after) {
     $(id).addEventListener('click', (e) => {
