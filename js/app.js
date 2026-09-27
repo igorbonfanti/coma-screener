@@ -29,7 +29,24 @@
   let state = { universes: ['SP500'], loaded: {}, merged: null, params: null, benchmarks: null,
     live: null, oos: null, period: 'oos', scheme: 'equal', mode: 'rebal',
     sortKey: 'quality', sortDir: -1, basket: new Set(), build: null, lastScreen: [],
-    hl: null, hist: null, factors: null };
+    hl: null, hist: null, factors: null,
+    start: null, rows: [], rowsFull: [], passFull: null, soloTroncamento: [] };
+
+  /**
+   * Le crisi che la finestra puo contenere o escludere. Servono a rendere
+   * esplicita la scelta: "dal 2010" suona neutro, "senza dot-com ne Lehman" no.
+   */
+  const CRISI = [
+    { id: 'dotcom', nome: 'dot-com', da: '2000-03', a: '2002-10' },
+    { id: 'lehman', nome: 'Lehman', da: '2007-10', a: '2009-03' },
+    { id: 'covid', nome: 'Covid', da: '2020-02', a: '2020-03' },
+    { id: 'tassi', nome: '2022', da: '2022-01', a: '2022-10' },
+  ];
+  const INIZI = [
+    { ym: null, label: 'Tutto', nota: 'dal 1999' },
+    { ym: '2003-01', label: 'Post dot-com', nota: 'dal 2003' },
+    { ym: '2010-01', label: 'Post Lehman', nota: 'dal 2010' },
+  ];
 
   // benchmark più congruente alla selezione di universi.
   // TUTTI total return: i titoli usano l'adjusted close (dividendi reinvestiti),
@@ -252,9 +269,8 @@
       benchLabel: bm.label,
     };
     setDataDate(updated);
-    // istogrammi: dipendono dall'universo, quindi si ricalcolano a ogni merge
-    state.hist = {};
-    for (const c of CTRLS) { const b = buildHist(rows, c); if (b) state.hist[c.k] = b; }
+    recomputeRows();          // metriche e istogrammi sulla finestra scelta
+    renderStartControl();
     renderScreenCtrls();
     recomputeLive(); recomputeOOS(); renderAll();
   }
@@ -270,11 +286,38 @@
     fr.textContent = giorni <= 9 ? 'AGGIORNATO' : giorni + ' GIORNI FA';
   }
 
+  /**
+   * Le metriche di selezione vengono ricalcolate dalle curve mensili sulla
+   * finestra scelta. Prima venivano dalla pipeline, calcolate sulla storia
+   * piena: non avrebbero saputo rispondere a "come sarebbe senza il dot-com".
+   */
+  function recomputeRows() {
+    if (!state.merged) { state.rows = []; state.rowsFull = []; return; }
+    const rfSeg = state.merged.curves.rf
+      ? { i0: ymToIdxApp(state.merged.curves.rf.s), p: state.merged.curves.rf.p } : null;
+    state.rows = LIVE.metricsFrom(state.merged.curves, state.start, rfSeg);
+    // riferimento sulla storia piena: serve a dire di quanto la finestra allarga
+    // il paniere, che e l'unica cosa che l'utente sta davvero comprando
+    state.rowsFull = state.start ? LIVE.metricsFrom(state.merged.curves, null, rfSeg) : state.rows;
+    state.hist = {};
+    for (const c of CTRLS) { const b = buildHist(state.rows, c); if (b) state.hist[c.k] = b; }
+  }
+  const ymToIdxApp = (s) => { const [y, m] = s.split('-').map(Number); return y * 12 + (m - 1); };
+
+  /** Mesi disponibili dalla data scelta a oggi: limita "Storia minima". */
+  function mesiFinestra() {
+    const oggi = ymToIdxApp(new Date().toISOString().slice(0, 7));
+    const inizio = state.start ? ymToIdxApp(state.start) : ymToIdxApp('1999-01');
+    return Math.max(12, oggi - inizio + 1);
+  }
+
   function recomputeLive() {
-    state.live = LIVE.recompute(state.merged.metrics, state.merged.curves, T, { ...state.params, nSim: 150 });
+    state.live = LIVE.recompute({ rows: state.rows, count: state.rows.length },
+      state.merged.curves, T, { ...state.params, nSim: 150, screenPpy: 12, startYM: state.start });
   }
   function recomputeOOS() {
-    state.oos = LIVE.recomputeOOS(state.merged.curves, T, { ...state.params, nSim: 150 });
+    state.oos = LIVE.recomputeOOS(state.merged.curves, T,
+      { ...state.params, nSim: 150, startYM: state.start });
   }
 
   function currentBacktest() {
@@ -283,6 +326,86 @@
   }
 
   // ---- render --------------------------------------------------------------
+  /**
+   * Controllo sulla data d'inizio. Spostarla in avanti allarga il paniere, ma
+   * lo fa togliendo le crisi: il filtro "mai un quinquennio negativo" perde
+   * potere proprio perche' non c'e' piu' niente da intercettare. Il controllo
+   * serve, ma va usato sapendolo, quindi accanto ci sta sempre scritto quali
+   * crisi restano dentro.
+   */
+  function renderStartControl() {
+    const box = $('#start-select');
+    if (!box) return;
+    const anni = mesiFinestra() / 12;
+    box.innerHTML = '<span>Analisi da</span>' +
+      '<div class="seg" role="group" aria-label="Inizio dell\u2019analisi">' +
+      INIZI.map((i) => `<button type="button" data-start="${i.ym || ''}" ` +
+        `aria-pressed="${(state.start || '') === (i.ym || '')}" ` +
+        `title="${i.label} (${i.nota}). ${i.ym ? 'Esclude le crisi precedenti: il paniere si allarga perche il filtro sul quinquennio trova meno da scartare.' : 'Tutta la storia disponibile, dal gennaio 1999.'}">` +
+        `${i.label.toUpperCase()}</button>`).join('') + '</div>' +
+      `<span class="muted">${num(anni, 0)} anni</span>`;
+    box.querySelectorAll('[data-start]').forEach((el) => el.addEventListener('click', () => {
+      state.start = el.dataset.start || null;
+      state.basket.clear();
+      clampMinYears();
+      recomputeRows();
+      renderStartControl(); renderScreenCtrls();
+      recomputeLive(); recomputeOOS(); renderAll();
+    }));
+  }
+
+  /** La storia minima non puo superare la finestra scelta, o non passa nessuno. */
+  function clampMinYears() {
+    const max = Math.max(5, Math.floor(mesiFinestra() / 12));
+    const c = CTRLS.find((x) => x.k === 'minYears');
+    c.max = max;
+    if (T.minYears > max) T.minYears = max;
+  }
+
+  /** Quali crisi restano dentro la finestra, e quanto il filtro sta ancora discriminando. */
+  function renderWindowInfo(res) {
+    const box = $('#window-info');
+    if (!box) return;
+    const inizio = state.start || '1999-01';
+    const dentro = CRISI.filter((c) => c.a >= inizio);
+    const fuori = CRISI.filter((c) => c.a < inizio);
+    const tot = state.rows.length;
+    const scartati = res ? res.skipped.cinqueY : 0;
+    const quota = tot ? scartati / tot : 0;
+    // con finestre mobili di 5 anni le osservazioni indipendenti sono circa
+    // (anni - 5) / 5: e il numero che dice quanto poco si stia misurando
+    const anni = mesiFinestra() / 12;
+    const indip = Math.max(0, Math.floor((anni - 5) / 5));
+    // sotto un quarto dell'universo il criterio non sta piu selezionando granche
+    const debole = quota < 0.25;
+    // quanti titoli passerebbero con la storia piena, a parita di soglie: e
+    // l'unico numero che dice davvero cosa si sta comprando spostando la data
+    let confronto = '';
+    if (state.start && state.rowsFull.length) {
+      const pieno = E.screen(state.rowsFull, { ...T, ppy: 12, sortBy: 'quality' }).passed;
+      const n = res ? res.passed : 0;
+      if (pieno > 0) {
+        confronto = `<span class="fstep${n > pieno * 1.5 ? ' cut' : ''}">Passano <b>${n}</b> ` +
+          `contro <b>${pieno}</b> con la storia piena` +
+          (n > pieno ? ` <span class="muted">(${num(n / pieno, 1)} volte tanti)</span>` : '') + '</span>';
+      }
+    }
+    box.innerHTML =
+      `<span class="fstep">Finestra <b>${F.month(inizio)}\u2013oggi</b></span>` +
+      `<span class="fstep">Crisi incluse <b>${dentro.length ? dentro.map((c) => c.nome).join(', ') : 'nessuna'}</b></span>` +
+      (fuori.length ? `<span class="fstep cut">Escluse <b>${fuori.map((c) => c.nome).join(', ')}</b></span>` : '') +
+      `<span class="fstep">Blocchi di 5 anni indipendenti <b>${indip}</b></span>` +
+      `<span class="fstep${debole ? ' cut' : ' keep'}">Il filtro sul quinquennio scarta <b>${pct(quota, 0)}</b> dell\u2019universo</span>` +
+      (dentro.length === 0
+        ? '<span class="fstep cut">Nessuna crisi nella finestra: il criterio anti-drawdown non e stato messo alla prova, non e stato superato.</span>' : '') +
+      (state.soloTroncamento.length
+        ? `<span class="fstep cut">Entrano solo grazie al troncamento <b>${state.soloTroncamento.length}</b> ` +
+          `<span class="muted">${state.soloTroncamento.slice(0, 8).join(' ')}` +
+          `${state.soloTroncamento.length > 8 ? ' e altri' : ''}</span></span>` : '') +
+      confronto +
+      (debole ? '<span class="fstep cut">In questa finestra quel criterio non seleziona quasi nulla: il paniere e piu ampio perche la soglia e diventata facile, non perche i titoli siano migliori.</span>' : '');
+  }
+
   function renderUniverseSelect() {
     const box = $('#universe-select');
     box.innerHTML = '<span>Universi</span>' +
@@ -344,7 +467,11 @@
     const reg = sc && sc.regression && sc.regression[rk];
     const m = sc && sc.metrics[rk];
     const meta = $('#verdict-meta');
-    if (meta) meta.textContent = oosB ? `${F.month(oosB.from)} &ndash; ${F.month(oosB.to)} &middot; ${schemeLabel[state.scheme].toLowerCase()}`.replace(/&ndash;/g, '\u2013').replace(/&middot;/g, '\u00b7') : '';
+    const oosInfo = state.oos && !state.oos.insufficient ? state.oos : null;
+    if (meta) meta.textContent = oosB
+      ? `${F.month(oosB.from)}–${F.month(oosB.to)} · ${schemeLabel[state.scheme].toLowerCase()}`
+        + (oosInfo && oosInfo.anniPre ? ` · selezione su ${oosInfo.anniPre} anni precedenti` : '')
+      : '';
 
     const paint = (stClass, icon, title, detail) =>
       `<div class="verdict"><div class="vhead"><span class="st ${stClass}">${stIcon(icon)}${title}</span></div>` +
@@ -420,9 +547,11 @@
     const fx = state.merged && state.merged.curves.fx;
     if (!blk || !state.factors || !fx) {
       if (meta) meta.textContent = '';
-      box.innerHTML = emptyState('Attribuzione non disponibile',
-        !state.factors ? 'Il file dei fattori non e stato caricato.'
-          : 'Serve il cambio euro/dollaro per riportare i rendimenti nella valuta dei fattori.', 5);
+      const motivo = !blk
+        ? 'Non c’e un backtest da scomporre: con questa finestra e queste soglie la validazione non produce un portafoglio.'
+        : !state.factors ? 'Il file dei fattori non e stato caricato.'
+          : 'Serve il cambio euro/dollaro per riportare i rendimenti nella valuta dei fattori.';
+      box.innerHTML = emptyState('Attribuzione non disponibile', motivo, 5);
       return;
     }
     const seg = { i0: (() => { const [y, m] = fx.s.split('-').map(Number); return y * 12 + (m - 1); })(), p: fx.p };
@@ -565,6 +694,7 @@
 
   function resetFilters() {
     Object.assign(T, DEFAULT_T);
+    clampMinYears();
     for (const c of CTRLS) {
       const el = $('#rng-' + c.k);
       if (el) { el.value = T[c.k]; $('#lbl-' + c.k).textContent = c.fmt(T[c.k]); paintHist(c); }
@@ -587,7 +717,16 @@
 
   function renderScreenTable() {
     if (!state.merged) return;
-    const res = E.screen(state.merged.metrics.rows, { ...T, ppy: 252, sortBy: state.sortKey });
+    const res = E.screen(state.rows, { ...T, ppy: 12, sortBy: state.sortKey });
+    // Chi passa solo perche la finestra esclude le crisi. E la lista su cui
+    // non si ha evidenza: sono titoli promossi da un test piu debole, non da
+    // una storia migliore.
+    state.passFull = null; state.soloTroncamento = [];
+    if (state.start && state.rowsFull.length) {
+      state.passFull = new Set(E.screen(state.rowsFull, { ...T, ppy: 12, sortBy: 'quality' })
+        .picks.map((r) => r.t));
+      state.soloTroncamento = res.picks.filter((r) => !state.passFull.has(r.t)).map((r) => r.t);
+    }
     if (state.sortDir === 1) res.picks.reverse();
     state.lastScreen = res.picks;
 
@@ -597,13 +736,14 @@
     const cut = [['storia', s.storico], ['quinquennio negativo', s.cinqueY], ['R\u00b2', s.r2],
       ['CAGR', s.cagr], ['drawdown', s.dd]].filter(([, n]) => n > 0);
     $('#screen-summary').innerHTML = '<div class="funnel">' +
-      step('Analizzati', state.merged.metrics.count) +
+      step('Analizzati', state.rows.length) +
       (cut.length ? '<span class="farrow">\u2192 scartati da</span>' : '') +
       cut.map(([l, n]) => step(l, n, 'cut')).join('') +
       '<span class="farrow">\u2192</span>' +
       step('Passati', res.passed, 'keep') +
       (res.picks.length < res.passed ? step('in tabella', res.picks.length) : '') +
       '</div>';
+    renderWindowInfo(res);
 
     const cols = [['quality', 'Quality'], ['cagr', 'CAGR'], ['vol', 'Volatilit\u00e0'],
       ['mdd', 'Drawdown'], ['min5y', 'Min 5 anni'], ['r2', 'R\u00b2'], ['reg', 'Regolarit\u00e0'],
@@ -627,7 +767,10 @@
         h += `<tr data-sym="${r.t}"${state.hl === r.t ? ' class="sel"' : ''}>` +
           `<td><span class="chip" role="button" tabindex="0" data-star="${r.t}" aria-pressed="${on}" ` +
           `aria-label="${on ? 'Togli' : 'Aggiungi'} ${r.t} ${on ? 'dal' : 'al'} basket">${on ? '\u2605' : '\u2606'}</span></td>` +
-          `<td><span class="sym">${r.t}</span></td>` +
+          `<td><span class="sym">${r.t}</span>` +
+          (state.passFull && !state.passFull.has(r.t)
+            ? '<span class="dlt" title="Passa solo perche la finestra esclude le crisi precedenti: con la storia piena questo titolo non supererebbe le soglie.">nuovo</span>' : '') +
+          '</td>' +
           `<td>${sparkline(r.t, winMonths)}</td>` +
           `<td class="num r">${num(r.quality, 2)}</td>` +
           `<td class="num r">${pct(r.cagr, 0)}</td>` +
@@ -660,7 +803,9 @@
   // ---- portafoglio custom / salvataggio ------------------------------------
   function activeBuild() {
     if (state.basket.size >= 2) {
-      const res = LIVE.recomputeFromTickers(state.merged.metrics, state.merged.curves, [...state.basket], { ...state.params, nSim: 150 }, T.minYears);
+      const res = LIVE.recomputeFromTickers({ rows: state.rows, count: state.rows.length },
+        state.merged.curves, [...state.basket],
+        { ...state.params, nSim: 150, startYM: state.start }, T.minYears);
       return { source: 'custom', res };
     }
     return { source: 'canonico', res: state.live };
@@ -844,7 +989,7 @@
       if (!q) return;
       input.value = '';
       if (q === 'GUIDA' || q === 'HELP') { $('#btn-help').click(); return; }
-      const row = state.merged && state.merged.metrics.rows.find((r) => r.t === q);
+      const row = state.rows.find((r) => r.t === q);
       if (!row) {
         form.classList.add('err');
         input.placeholder = q + ' non trovato in questo universo';
@@ -868,6 +1013,7 @@
     initCommand();
     if (window.ComaUI) ComaUI.initTooltips();
     renderUniverseSelect();
+    renderStartControl();
     renderScreenCtrls();
     showLoading();
     bindSeg('#seg-period', 'period', () => { renderBacktest(); renderAttribution(); });

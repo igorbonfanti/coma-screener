@@ -148,3 +148,9 @@
   .wbar { width: 70px; }
   .kpis { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 }
+
+/* Titolo promosso solo dal troncamento della finestra: marcato a parole, non
+   con il solo colore, e in ambra perche segnala una scelta di navigazione
+   dell'utente, non un giudizio sul dato. */
+.t .dlt { font: 600 9px var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--bg); background: var(--amber); padding: 1px 4px; margin-left: 6px; cursor: help; }

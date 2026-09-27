@@ -75,6 +75,30 @@ setTimeout(() => {
   ck(/\d{2}\/\d{4}\u2013\d{2}\/\d{4}/.test($('#port-n').textContent),
     'portafoglio mostra la finestra fissa: ' + $('#port-n').textContent);
   // struttura tabelle: thead/tbody per l'intestazione sticky
+  // controllo sulla data d'inizio, e gli strumenti che ne rendono visibile il prezzo
+  ck($('#start-select').querySelectorAll('[data-start]').length === 3, 'tre inizi selezionabili');
+  ck($('#start-select').querySelector('[data-start=""]').getAttribute('aria-pressed') === 'true',
+    'di partenza vale tutta la storia');
+  const infoTutto = $('#window-info').textContent;
+  ck(infoTutto.includes('dot-com') && infoTutto.includes('Lehman'), 'crisi incluse elencate');
+  ck(/Blocchi di 5 anni indipendenti/.test(infoTutto), 'osservazioni indipendenti mostrate');
+  const passatiTutto = +($('#screen-summary').textContent.match(/Passati (\d+)/) || [])[1];
+
+  $('#start-select').querySelector('[data-start="2010-01"]').click();
+  const info10 = $('#window-info').textContent;
+  const passati10 = +($('#screen-summary').textContent.match(/Passati (\d+)/) || [])[1];
+  ck(passati10 > passatiTutto, `dal 2010 il paniere si allarga: ${passatiTutto} -> ${passati10}`);
+  ck(info10.includes('Escluse') && info10.includes('dot-com'), 'crisi escluse dichiarate');
+  ck(/contro \d+ con la storia piena/.test(info10), 'confronto con la storia piena');
+  ck(/Entrano solo grazie al troncamento/.test(info10), 'elenco dei promossi dal troncamento');
+  ck($('#screen-tbl').querySelectorAll('tbody .dlt').length > 0, 'titoli marcati come "nuovo" in tabella');
+  ck(+$('#rng-minYears').max <= 17, 'storia minima limitata alla finestra: ' + $('#rng-minYears').max);
+  ck(!$('#verdict').textContent.includes('Validazione non disponibile'),
+    'la validazione resta possibile con la finestra corta');
+  $('#start-select').querySelector('[data-start=""]').click();
+  ck(+($('#screen-summary').textContent.match(/Passati (\d+)/) || [])[1] === passatiTutto,
+    'tornando a tutta la storia il paniere torna quello di prima');
+
   // attribuzione fattoriale: la scala dei modelli e i coefficienti
   ck($('#attrib-tbl').querySelectorAll('tbody tr').length === 4, 'quattro modelli nella scala');
   ck($('#attrib-tbl').textContent.includes('BAB') && $('#attrib-tbl').textContent.includes('QMJ'),

@@ -217,3 +217,71 @@ dell'implementazione:
 
 Inoltre alcune cifre su QMJ (premio ~4,7% annuo, correlazioni) vengono da fonti secondarie e
 sono da trattare come indicative.
+
+---
+
+## 8. La data di inizio dell'analisi
+
+_Aggiunto il 27 settembre 2026. Controllo in `js/app.js`, finestra applicata in `js/live.js`._
+
+### La richiesta e il suo rischio
+
+Poter scegliere da quando far partire l'analisi — per esempio dal 2003 per escludere il
+dot-com, o dal 2010 per escludere anche Lehman — allarga il paniere. Sui dati:
+
+| Finestra | Crisi incluse | Passano | Scartati dal quinquennio |
+|---|---|---|---|
+| dal 1999 | dot-com, Lehman, Covid, 2022 | 23 | 80% |
+| dal 2003 | Lehman, Covid, 2022 | 35 | 74% |
+| dal 2010 | Covid, 2022 | **133** | 44% |
+
+Il paniere si allarga quasi sei volte. **Ma non perche' i titoli siano piu' solidi: perche' il
+test e' piu' debole.** Il criterio "mai un quinquennio negativo" misura il comportamento nelle
+crisi; tolte le crisi, non ha piu' niente da intercettare. Dal 2010 entrano AAPL, GOOG e
+GOOGL — titoli la cui storia piena non supererebbe la soglia.
+
+La ricerca inquadra il problema con precisione. Bailey, Borwein, Lopez de Prado e Zhu (Notices
+of the AMS, 2014) mostrano che provando N configurazioni con vero Sharpe nullo, lo Sharpe
+massimo in-sample atteso cresce come circa √(2·ln N / T): **accorciare il campione mentre si
+aumenta il numero di varianti provate e' la combinazione peggiore possibile.** La data di
+inizio e' una di quelle varianti, e rientra nel conteggio delle prove per il Deflated Sharpe
+(Harvey e Liu, JPM 2015) — con un N efficace ridotto, perche' finestre vicine si sovrappongono.
+
+C'e' anche un argomento serio **a favore**: "Structural breaks, model uncertainty and factor
+selection" (Journal of Econometrics, 2025) documenta che il set di fattori selezionati cambia
+nel tempo — 5-6 prima del 2005, solo 2 dopo — e che usare tutta la storia fa emergere fattori
+importanti in passato ma non oggi. La decimalizzazione del 2001, che ha ridotto gli spread del
+30-50%, e' un altro motivo strutturale legittimo. Ma l'argomento taglia in entrambe le
+direzioni: se il 2000-02 e' "non ripetibile", il regime di tassi a zero del 2010-2021 lo e'
+ancora di piu'.
+
+**Il discrimine**: escludere un periodo e' legittimo quando la motivazione e' strutturale e
+dichiarata *prima*; diventa illegittimo quando la motivazione e' la dimensione del paniere che
+ne risulta, perche' quello e' ottimizzare sul risultato.
+
+### Come e' stato implementato
+
+Il controllo c'e', perche' serve davvero: confrontare regimi, rendere eleggibili titoli quotati
+di recente, chiedersi come sarebbe stata la selezione fatta in un altro momento. Ma non puo'
+sostituire il campione pieno, solo affiancarlo. Accanto alla scelta compaiono sempre:
+
+- **quali crisi restano dentro e quali sono escluse**, per nome: "dal 2010" suona neutro, "senza dot-com ne' Lehman" no;
+- **i blocchi di 5 anni indipendenti** nella finestra, circa (anni − 5)/5: dal 1999 sono 4, dal 2010 sono 2;
+- **il tasso di scarto del filtro sul quinquennio**, che e' la misura diretta del suo potere discriminante, con un avviso esplicito quando scende sotto il 25%;
+- **quanti titoli passano rispetto alla storia piena**, a parita' di soglie;
+- **l'elenco dei titoli che entrano solo grazie al troncamento**, marcati anche in tabella. E' la lista su cui non si ha evidenza, ed e' il pezzo che rende lo strumento onesto;
+- un avviso quando la finestra **non contiene nessuna crisi**: in quel caso il criterio anti-drawdown non e' stato superato, e' rimasto non testato.
+
+Il default resta la storia piena. I tre inizi sono **preset con motivazione**, non un cursore
+continuo: un cursore libero, spostabile guardando quanti titoli restano, sarebbe letteralmente
+una macchina per illudersi.
+
+La validazione out-of-sample si adatta: con una finestra corta la storia richiesta prima del
+taglio si riduce (fino a un minimo di 5 anni, sotto il quale la validazione viene rifiutata) e
+il verdetto dichiara su quanti anni la selezione e' stata fatta.
+
+### Cosa manca ancora qui
+
+- **Il ventaglio di tutte le partenze**: una tabella con una riga per anno d'inizio e, per ciascuna, titoli superstiti, tasso di scarto, crisi incluse. Vedere la monotonia in un colpo d'occhio e' piu' efficace di leggerla una finestra alla volta.
+- **Il contatore delle finestre ispezionate** nella sessione, da riportare nel conteggio delle prove per il Deflated Sharpe.
+- **Lo sdoppiamento del criterio**: far girare il filtro anti-drawdown sempre sulla storia massima e lasciare che la data scelta agisca solo sulle metriche descrittive. Darebbe la vista sul periodo desiderato senza indebolire la selezione. E' la variante metodologicamente piu' solida, ma risponde a una domanda diversa da quella posta.

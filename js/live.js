@@ -87,6 +87,39 @@
     });
   }
 
+  // ---- metriche su una finestra scelta --------------------------------------
+
+  /**
+   * Ricalcola le metriche di selezione dalle curve mensili, a partire da un mese
+   * scelto. Serve al controllo sulla data d'inizio: le metriche della pipeline
+   * sono calcolate sulla storia piena e non saprebbero rispondere a "come
+   * sarebbe la selezione se il dot-com non ci fosse".
+   *
+   * Effetto collaterale utile: tutto il calcolo passa cosi per le stesse serie
+   * mensili, e sparisce la vecchia incoerenza per cui la tabella dello screening
+   * usava metriche giornaliere e la vista out-of-sample quelle mensili.
+   *
+   * `startYM` = 'YYYY-MM' oppure null per tutta la storia disponibile.
+   */
+  function metricsFrom(curves, startYM, rfSeg) {
+    const segs = segsOf(curves);
+    const lo = startYM ? ymToIdx(startYM) : -Infinity;
+    const rows = [];
+    for (const t in segs) {
+      const { i0, p } = segs[t];
+      const da = Math.max(0, lo - i0);
+      const px = da ? p.slice(da) : p;
+      if (px.length < 36) continue;                 // sotto i tre anni non si misura nulla
+      const inizio = i0 + da;
+      const m = E.metricsFor(px, PPY_M, rfOn(rfSeg, inizio, inizio + px.length - 1));
+      rows.push({ t, days: px.length, start: idxToYm(inizio),
+        cagr: m.cagr, vol: m.vol, mdd: m.mdd, min5y: m.min5y, r2: m.r2, reg: m.reg,
+        mar: m.mar, sortino: m.sortino, sharpe: m.sharpe, score: m.score });
+    }
+    E.addQualityScore(rows);                        // percentili sull'insieme scelto
+    return rows;
+  }
+
   // ---- IN-SAMPLE -----------------------------------------------------------
   /**
    * `windowYearsBt` = ampiezza FISSA della finestra di test (in anni). Prima la
@@ -106,6 +139,7 @@
     if (benchSeg) hi = Math.min(hi, benchSeg.i0 + benchSeg.p.length - 1);
     let lo = hi - Math.round((windowYearsBt || 15) * 12) + 1;
     if (benchSeg) lo = Math.max(lo, benchSeg.i0);
+    if (opt.startYM) lo = Math.max(lo, ymToIdx(opt.startYM));   // data d'inizio scelta
     if (hi - lo + 1 < (opt.minMonths || 36)) return { picks: [], dropped, insufficient: true };
     const align = alignRange(valid, segs, lo, hi);   // scarta chi non copre [lo,hi]
     if (!align) return { picks: [], dropped, insufficient: true };
@@ -118,7 +152,8 @@
   }
 
   function recompute(metrics, curves, thresholds, opt) {
-    const scr = E.screen(metrics.rows, { ...thresholds, ppy: 252, sortBy: 'quality' });
+    opt = opt || {};
+    const scr = E.screen(metrics.rows, { ...thresholds, ppy: opt.screenPpy || 252, sortBy: 'quality' });
     const wanted = scr.picks.map((r) => r.t);
     const available = wanted.filter((t) => curves.series[t]);
     // finestra di test = la stessa storia minima richiesta dallo screen: e una
@@ -140,35 +175,47 @@
     const cutoffYears = opt.oosCutoffYears || 7, oosMinYears = opt.oosMinYears || 12;
     const nowIdx = ymToIdx(new Date().toISOString().slice(0, 7));
     const cutoffIdx = nowIdx - cutoffYears * 12;
-    const minPre = Math.round(oosMinYears * 12);
+    const startIdx = opt.startYM ? ymToIdx(opt.startYM) : -Infinity;
+    // La storia minima richiesta prima del cutoff non puo superare la finestra
+    // scelta, o nessun titolo qualifica mai. Si adatta, con un pavimento a 5
+    // anni: sotto quello la selezione "nel passato" non significherebbe nulla.
+    let anniPre = oosMinYears;
+    if (startIdx > -Infinity) {
+      const disponibili = (cutoffIdx - startIdx + 1) / 12;
+      anniPre = Math.min(oosMinYears, Math.floor(disponibili) - 1);
+    }
+    if (anniPre < 5) return { insufficient: true, motivo: 'finestra troppo corta per una validazione' };
+    const minPre = Math.round(anniPre * 12);
     const segs = segsOf(curves);
     const benchSeg = segOf(curves.bench);
     const rfSeg = segOf(curves.rf);
 
-    // metriche pre-cutoff (mensili) per lo screen out-of-sample
-    const rows = [], preLenMap = {};
+    // metriche pre-cutoff (mensili) per lo screen out-of-sample.
+    // `preDa` e `preFine` sono indici ASSOLUTI di mese: con una data d'inizio
+    // scelta, la finestra pre-cutoff non parte piu dall'inizio della serie, e
+    // confondere i due riferimenti fa collassare l'allineamento.
+    const rows = [], preDa = {}, preFine = {};
     for (const t in segs) {
       const { i0, p } = segs[t];
-      const preLen = Math.min(p.length, cutoffIdx - i0 + 1);
+      const da = Math.max(0, startIdx - i0);        // taglia cio che precede la data scelta
+      const fine = Math.min(p.length - 1, cutoffIdx - i0);
+      const preLen = fine - da + 1;
       if (preLen < minPre) continue;
-      const post = p.length - preLen;
-      if (post < 12) continue;            // serve abbastanza storia POST per testare
-      preLenMap[t] = preLen;
-      const m = E.metricsFor(p.slice(0, preLen), PPY_M, rfOn(rfSeg, i0, i0 + preLen - 1));
+      if (p.length - 1 - fine < 12) continue;       // serve storia POST per testare
+      preDa[t] = i0 + da; preFine[t] = i0 + fine;
+      const m = E.metricsFor(p.slice(da, fine + 1), PPY_M, rfOn(rfSeg, i0 + da, i0 + fine));
       rows.push({ t, days: preLen, cagr: m.cagr, vol: m.vol, mdd: m.mdd, min5y: m.min5y,
         r2: m.r2, reg: m.reg, mar: m.mar, sortino: m.sortino, sharpe: m.sharpe, score: m.score });
     }
     if (rows.length < 2) return { insufficient: true };
     E.addQualityScore(rows);
-    const scr = E.screen(rows, { ...thresholds, minYears: oosMinYears, ppy: PPY_M, sortBy: 'quality' });
+    const scr = E.screen(rows, { ...thresholds, minYears: anniPre, ppy: PPY_M, sortBy: 'quality' });
     const avail = scr.picks.map((r) => r.t);
     if (avail.length < 2) return { insufficient: true };
 
     // pesi sui rendimenti PRE-cutoff (decisi out-of-sample)
-    let lo = -Infinity, hi = -Infinity;
-    for (const t of avail) { const s = segs[t]; lo = Math.max(lo, s.i0); hi = hi === -Infinity ? cutoffIdx : hi; }
-    hi = cutoffIdx;
-    for (const t of avail) hi = Math.min(hi, segs[t].i0 + preLenMap[t] - 1);
+    let lo = -Infinity, hi = cutoffIdx;
+    for (const t of avail) { lo = Math.max(lo, preDa[t]); hi = Math.min(hi, preFine[t]); }
     const preAlign = alignRange(avail, segs, lo, hi);
     if (!preAlign) return { insufficient: true };
     const weights = weightsFor(preAlign.R, opt);
@@ -185,7 +232,7 @@
     const weights2 = { equal: { weights: reW(weights.equal.weights) },
       invvol: { weights: reW(weights.invvol.weights) }, resampled: { weights: reW(weights.resampled.weights) } };
     const bt = backtestSchemes(postAlign, weights2, benchSeg, rfSeg, opt);
-    return { insufficient: false, cutoff: idxToYm(cutoffIdx), picks: postAlign.used,
+    return { insufficient: false, cutoff: idxToYm(cutoffIdx), picks: postAlign.used, anniPre,
       dropped: preAlign.used.length - postAlign.used.length, backtest: bt };
   }
 
@@ -237,5 +284,5 @@
     return { n: rets.length, da: bt.months[1], a: bt.months[bt.months.length - 1], scala };
   }
 
-  window.ComaLive = { recompute, recomputeFromTickers, recomputeOOS, attribution };
+  window.ComaLive = { recompute, recomputeFromTickers, recomputeOOS, attribution, metricsFrom };
 })();
